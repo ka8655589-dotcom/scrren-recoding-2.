@@ -1,0 +1,6 @@
+{
+  "name": "Screen Recorder",
+  "description": "24-Hour Auto-Splitting Background Screen Recorder with Low Battery Protection and Google Drive Auto-Sync",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
