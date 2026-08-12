@@ -6,7 +6,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" opacity="0.5" tools:ignore="ForegroundServicePermission" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -40,7 +39,7 @@
 
         <service
             android:name=".service.ScreenRecordService"
-            android:foregroundServiceType="camera|microphone"
+            android:foregroundServiceType="mediaProjection|camera|microphone"
             android:exported="false" />
 
     </application>
