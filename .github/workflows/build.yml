@@ -26,11 +26,14 @@ jobs:
         with:
           validate-wrappers: false
 
+      - name: Ensure valid Gradle Wrapper
+        run: gradle wrapper
+
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
