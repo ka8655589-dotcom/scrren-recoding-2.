@@ -10,6 +10,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GRADLE_OPTS: "-Djava.awt.headless=true"
+      ORG_GRADLE_PROJECT_kotlin_compiler_execution_strategy: "in-process"
 
     steps:
       - name: Checkout Repository
