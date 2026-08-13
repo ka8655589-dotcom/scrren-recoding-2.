@@ -14,7 +14,7 @@ android {
   compileSdk = 36
 
   defaultConfig {
-    applicationId = "com.aistudio.screenrecorder.recapp"
+    applicationId = "com.aistudio.screenrecorder.v2x9q"
     minSdk = 24
     targetSdk = 35
     versionCode = 1
