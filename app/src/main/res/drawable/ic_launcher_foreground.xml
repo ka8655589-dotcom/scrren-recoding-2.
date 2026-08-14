@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/samsung_camera_icon_1786193343681"
+        android:drawable="@drawable/samsung_settings_icon_1786705483348"
         android:gravity="center" />
 </layer-list>

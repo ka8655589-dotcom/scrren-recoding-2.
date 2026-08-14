@@ -51,10 +51,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val batteryThreshold = settingsManager.batteryThresholdFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val splitDurationMins = settingsManager.splitDurationMinsFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 60)
     val autoUploadDrive = settingsManager.autoUploadDriveFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-    val recordAudio = settingsManager.recordAudioFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val driveConnected = settingsManager.driveConnectedFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val recordAudio = settingsManager.recordAudioFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val driveConnected = settingsManager.driveConnectedFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val driveAccount = settingsManager.driveAccountFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "ka8655589@gmail.com")
     val driveFolder = settingsManager.driveFolderFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Screen_Recordings_24H")
+    val driveOAuthToken = settingsManager.driveOAuthTokenFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
     val videoResolution = settingsManager.videoResolutionFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "720p")
     val cameraOption = settingsManager.cameraOptionFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Screen Only")
     val autoDeleteAfterSync = settingsManager.autoDeleteAfterSyncFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -164,6 +165,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateDriveFolder(folder: String) {
         viewModelScope.launch { settingsManager.setDriveFolder(folder) }
+    }
+
+    fun updateDriveOAuthToken(token: String) {
+        viewModelScope.launch { settingsManager.setDriveOAuthToken(token) }
+    }
+
+    fun testDriveConnection(token: String, folder: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val (success, message) = uploader.testDriveConnection(token, folder)
+            if (success) {
+                settingsManager.setDriveConnected(true)
+            }
+            withContext(Dispatchers.Main) {
+                onResult(success, message)
+            }
+        }
     }
 
     fun updateDriveAccount(account: String) {

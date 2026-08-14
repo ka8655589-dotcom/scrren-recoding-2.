@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Screen Recorder"
+rootProject.name = "Update"
 
 include(":app")

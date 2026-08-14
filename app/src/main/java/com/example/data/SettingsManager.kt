@@ -23,6 +23,7 @@ class SettingsManager(private val context: Context) {
         val KEY_DRIVE_CONNECTED = booleanPreferencesKey("drive_connected")
         val KEY_DRIVE_ACCOUNT = stringPreferencesKey("drive_account")
         val KEY_DRIVE_FOLDER = stringPreferencesKey("drive_folder")
+        val KEY_DRIVE_OAUTH_TOKEN = stringPreferencesKey("drive_oauth_token")
         val KEY_VIDEO_RESOLUTION = stringPreferencesKey("video_resolution")
         val KEY_CAMERA_OPTION = stringPreferencesKey("camera_option")
         val KEY_AUTO_DELETE_AFTER_SYNC = booleanPreferencesKey("auto_delete_after_sync")
@@ -67,7 +68,7 @@ class SettingsManager(private val context: Context) {
     }
 
     val recordAudioFlow: Flow<Boolean> = context.dataStore.data.map {
-        it[KEY_RECORD_AUDIO] ?: false
+        it[KEY_RECORD_AUDIO] ?: true
     }
 
     val maxRecordHoursFlow: Flow<Int> = context.dataStore.data.map {
@@ -75,7 +76,7 @@ class SettingsManager(private val context: Context) {
     }
 
     val driveConnectedFlow: Flow<Boolean> = context.dataStore.data.map {
-        it[KEY_DRIVE_CONNECTED] ?: true
+        it[KEY_DRIVE_CONNECTED] ?: false
     }
 
     val driveAccountFlow: Flow<String> = context.dataStore.data.map {
@@ -84,6 +85,10 @@ class SettingsManager(private val context: Context) {
 
     val driveFolderFlow: Flow<String> = context.dataStore.data.map {
         it[KEY_DRIVE_FOLDER] ?: "Screen_Recordings_24H"
+    }
+
+    val driveOAuthTokenFlow: Flow<String> = context.dataStore.data.map {
+        it[KEY_DRIVE_OAUTH_TOKEN] ?: ""
     }
 
     suspend fun setBatteryShieldEnabled(enabled: Boolean) {
@@ -116,6 +121,10 @@ class SettingsManager(private val context: Context) {
 
     suspend fun setDriveFolder(folder: String) {
         context.dataStore.edit { it[KEY_DRIVE_FOLDER] = folder }
+    }
+
+    suspend fun setDriveOAuthToken(token: String) {
+        context.dataStore.edit { it[KEY_DRIVE_OAUTH_TOKEN] = token }
     }
 
     suspend fun setVideoResolution(resolution: String) {

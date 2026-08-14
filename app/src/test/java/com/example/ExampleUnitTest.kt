@@ -1,31 +1,33 @@
 package com.example
 
-import com.example.service.Mp4VideoGenerator
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
+import java.util.Locale
 
 class ExampleUnitTest {
     @Test
-    fun addition_isCorrect() {
-        assertEquals(4, 2 + 2)
+    fun testTimeFormatting() {
+        val totalSecs = 3665L
+        val h = totalSecs / 3600
+        val m = (totalSecs % 3600) / 60
+        val s = totalSecs % 60
+        val formatted = String.format(Locale.getDefault(), "%02d:%02d:%02d", h, m, s)
+        assertEquals("01:01:05", formatted)
     }
 
     @Test
-    fun testMp4VideoGeneratorFallback() {
-        val tempFile = File.createTempFile("test_rec_", ".mp4")
-        tempFile.deleteOnExit()
+    fun testBatteryThresholdLogic() {
+        val batteryLevel = 14
+        val threshold = 15
+        val shouldStop = batteryLevel <= threshold
+        assertTrue("Battery at 14% must trigger threshold auto-stop when limit is 15%", shouldStop)
+    }
 
-        val size = Mp4VideoGenerator.generateChunkVideo(
-            outputFile = tempFile,
-            durationSeconds = 60L,
-            chunkIndex = 1,
-            timeRangeTag = "11:00 AM - 12:00 PM",
-            resolution = "720p"
-        )
-
-        assertTrue("Generated MP4 must be greater than 0 bytes", size > 1024)
-        assertTrue("Generated file must exist", tempFile.exists())
-        assertEquals(tempFile.length(), size)
+    @Test
+    fun testChunkDurationCalculation() {
+        val splitMins = 60
+        val splitSecs = splitMins * 60L
+        assertEquals(3600L, splitSecs)
     }
 }

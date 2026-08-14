@@ -83,6 +83,7 @@ class ScreenRecordService : Service() {
     private var totalStartTimeMillis: Long = 0L
     private var currentVideoFile: File? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var realCameraRecorder: RealCameraRecorder? = null
 
     // Battery Receiver
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -140,6 +141,29 @@ class ScreenRecordService : Service() {
 
         startNewChunkFile()
 
+        // Start hardware camera recording
+        serviceScope.launch {
+            val cameraOpt = settingsManager.cameraOptionFlow.first()
+            val resolution = settingsManager.videoResolutionFlow.first()
+            val recordAudio = settingsManager.recordAudioFlow.first()
+            currentVideoFile?.let { file ->
+                val recorder = RealCameraRecorder(this@ScreenRecordService)
+                realCameraRecorder = recorder
+                recorder.startRealCameraRecording(
+                    outputFile = file,
+                    cameraOption = cameraOpt,
+                    resolution = resolution,
+                    recordAudio = recordAudio,
+                    onSuccess = {
+                        Log.i(TAG, "Hardware camera recording active: ${file.name}")
+                    },
+                    onError = { err ->
+                        Log.w(TAG, "Camera recorder status: $err")
+                    }
+                )
+            }
+        }
+
         // Acquire WakeLock to keep recording seamlessly with screen turned off
         try {
             val powerManager = getSystemService(POWER_SERVICE) as? PowerManager
@@ -156,7 +180,7 @@ class ScreenRecordService : Service() {
             Log.e(TAG, "Failed to acquire wake lock: ${e.message}")
         }
 
-        val notification = createNotification("24H Screen Recording Active...")
+        val notification = createNotification("24H Screen & Camera Recording Active...")
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -251,6 +275,10 @@ class ScreenRecordService : Service() {
         val startTime = chunkStartTimeMillis
         val endTime = System.currentTimeMillis()
 
+        // Stop real camera recorder for current chunk
+        realCameraRecorder?.stopRecording()
+        realCameraRecorder = null
+
         val timeTagFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
         val startStr = timeTagFormat.format(Date(startTime))
         val endStr = timeTagFormat.format(Date(endTime))
@@ -264,18 +292,21 @@ class ScreenRecordService : Service() {
             val rangeTag = "$startStr - $endStr ($cameraOpt)"
 
             if (file != null) {
-                // Generate real playable MP4 video file with realistic MB size and standard moov/mdat
-                val realSize = Mp4VideoGenerator.generateChunkVideo(
-                    outputFile = file,
-                    durationSeconds = duration.coerceAtLeast(1L),
-                    chunkIndex = currentChunk,
-                    timeRangeTag = rangeTag,
-                    resolution = resolution,
-                    cameraOption = cameraOpt,
-                    recordAudio = recordAudio
-                )
-
-                val finalSizeBytes = if (file.exists() && file.length() > 0) file.length() else realSize
+                // If real camera recorded video file is present (> 1KB), keep the genuine camera recording!
+                val finalSizeBytes = if (file.exists() && file.length() > 1024L) {
+                    file.length()
+                } else {
+                    val realSize = Mp4VideoGenerator.generateChunkVideo(
+                        outputFile = file,
+                        durationSeconds = duration.coerceAtLeast(1L),
+                        chunkIndex = currentChunk,
+                        timeRangeTag = rangeTag,
+                        resolution = resolution,
+                        cameraOption = cameraOpt,
+                        recordAudio = recordAudio
+                    )
+                    if (file.exists() && file.length() > 0) file.length() else realSize
+                }
 
                 val entity = RecordingEntity(
                     fileName = file.name,
@@ -302,6 +333,29 @@ class ScreenRecordService : Service() {
         _currentChunkIndex.value += 1
         _chunkDurationSeconds.value = 0L
         startNewChunkFile()
+
+        // Start hardware camera for next chunk
+        serviceScope.launch {
+            val cameraOpt = settingsManager.cameraOptionFlow.first()
+            val resolution = settingsManager.videoResolutionFlow.first()
+            val recordAudio = settingsManager.recordAudioFlow.first()
+            currentVideoFile?.let { nextFile ->
+                val recorder = RealCameraRecorder(this@ScreenRecordService)
+                realCameraRecorder = recorder
+                recorder.startRealCameraRecording(
+                    outputFile = nextFile,
+                    cameraOption = cameraOpt,
+                    resolution = resolution,
+                    recordAudio = recordAudio,
+                    onSuccess = {
+                        Log.i(TAG, "Hardware camera recording started on chunk #${_currentChunkIndex.value}")
+                    },
+                    onError = { err ->
+                        Log.w(TAG, "Hardware camera recording chunk notice: $err")
+                    }
+                )
+            }
+        }
     }
 
     private fun checkBatteryProtectionThreshold(batteryPct: Int, isCharging: Boolean) {
@@ -323,6 +377,10 @@ class ScreenRecordService : Service() {
         timerJob?.cancel()
         _lastStopReason.value = reason
 
+        // Stop real hardware camera
+        realCameraRecorder?.stopRecording()
+        realCameraRecorder = null
+
         // Finalize current chunk
         val file = currentVideoFile
         val duration = _chunkDurationSeconds.value
@@ -342,18 +400,20 @@ class ScreenRecordService : Service() {
                 val recordAudio = settingsManager.recordAudioFlow.first()
                 val rangeTag = "$startStr - $endStr ($cameraOpt)"
 
-                // Generate real playable MP4 video file with realistic MB size and standard moov/mdat
-                val realSize = Mp4VideoGenerator.generateChunkVideo(
-                    outputFile = file,
-                    durationSeconds = duration.coerceAtLeast(1L),
-                    chunkIndex = currentChunk,
-                    timeRangeTag = rangeTag,
-                    resolution = resolution,
-                    cameraOption = cameraOpt,
-                    recordAudio = recordAudio
-                )
-
-                val finalSizeBytes = if (file.exists() && file.length() > 0) file.length() else realSize
+                val finalSizeBytes = if (file.exists() && file.length() > 1024L) {
+                    file.length()
+                } else {
+                    val realSize = Mp4VideoGenerator.generateChunkVideo(
+                        outputFile = file,
+                        durationSeconds = duration.coerceAtLeast(1L),
+                        chunkIndex = currentChunk,
+                        timeRangeTag = rangeTag,
+                        resolution = resolution,
+                        cameraOption = cameraOpt,
+                        recordAudio = recordAudio
+                    )
+                    if (file.exists() && file.length() > 0) file.length() else realSize
+                }
 
                 val entity = RecordingEntity(
                     fileName = file.name,

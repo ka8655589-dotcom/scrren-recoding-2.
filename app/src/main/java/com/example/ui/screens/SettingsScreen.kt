@@ -39,6 +39,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,6 +67,7 @@ fun SettingsScreen(
     driveConnected: Boolean,
     driveAccount: String,
     driveFolder: String,
+    driveOAuthToken: String = "",
     videoResolution: String = "720p",
     cameraOption: String = "Screen Only",
     autoDeleteAfterSync: Boolean = true,
@@ -74,6 +76,9 @@ fun SettingsScreen(
 ) {
     var accountInput by remember(driveAccount) { mutableStateOf(driveAccount) }
     var folderInput by remember(driveFolder) { mutableStateOf(driveFolder) }
+    var tokenInput by remember(driveOAuthToken) { mutableStateOf(driveOAuthToken) }
+    var testStatusMessage by remember { mutableStateOf<String?>(null) }
+    var isTestingDrive by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -449,7 +454,7 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Automatically uploads each completed 1-hour split chunk to Google Drive.",
+                        text = "Automatically uploads each completed 1-hour split chunk to Google Drive via Google Drive REST API v3.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -476,7 +481,7 @@ fun SettingsScreen(
                             folderInput = it
                             viewModel.updateDriveFolder(it)
                         },
-                        label = { Text("Google Drive Backup Folder") },
+                        label = { Text("Google Drive Backup Folder Name") },
                         leadingIcon = { Icon(imageVector = Icons.Default.Folder, contentDescription = null) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
@@ -484,14 +489,73 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Button(
-                        onClick = { viewModel.syncAllPendingToDrive() },
+                    OutlinedTextField(
+                        value = tokenInput,
+                        onValueChange = {
+                            tokenInput = it
+                            viewModel.updateDriveOAuthToken(it)
+                        },
+                        label = { Text("Google OAuth Access Token (Optional for REST upload)") },
+                        leadingIcon = { Icon(imageVector = Icons.Default.Lock, contentDescription = null) },
+                        placeholder = { Text("ya29.a0...") },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        supportingText = {
+                            Text("If token is left empty, clips can be uploaded with 1 tap via 'Share to Drive' on each video.")
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (testStatusMessage != null) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (testStatusMessage!!.startsWith("Success")) Color(0xFFDCFCE7) else Color(0xFFFEE2E2),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        ) {
+                            Text(
+                                text = testStatusMessage!!,
+                                modifier = Modifier.padding(10.dp),
+                                fontSize = 12.sp,
+                                color = if (testStatusMessage!!.startsWith("Success")) Color(0xFF166534) else Color(0xFF991B1B)
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.CloudQueue, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Test Google Drive Connection & Sync Now")
+                        OutlinedButton(
+                            onClick = {
+                                if (tokenInput.isBlank()) {
+                                    testStatusMessage = "Please enter an OAuth Access Token to test direct REST API upload, or use the Share icon on any video to upload via Google Drive App."
+                                } else {
+                                    isTestingDrive = true
+                                    viewModel.testDriveConnection(tokenInput, folderInput) { success, msg ->
+                                        isTestingDrive = false
+                                        testStatusMessage = if (success) "Success: $msg" else "Error: $msg"
+                                    }
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(if (isTestingDrive) "Testing..." else "Test Drive & Folder", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.syncAllPendingToDrive()
+                                testStatusMessage = "Sync triggered for all pending clips."
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.CloudQueue, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Sync All Now", fontSize = 12.sp)
+                        }
                     }
                 }
             }

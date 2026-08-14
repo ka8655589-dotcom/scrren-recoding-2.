@@ -354,15 +354,10 @@ fun RecordingsScreen(
                                 Row {
                                     IconButton(
                                         onClick = {
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "video/mp4"
-                                                putExtra(Intent.EXTRA_SUBJECT, item.fileName)
-                                                putExtra(Intent.EXTRA_TEXT, "Screen Recording Clip: ${item.fileName} (${item.timeRangeTag})")
-                                            }
-                                            context.startActivity(Intent.createChooser(shareIntent, "Share Video Clip"))
+                                            viewModel.shareVideo(context, item)
                                         }
                                     ) {
-                                        Icon(imageVector = Icons.Default.Share, contentDescription = "Share")
+                                        Icon(imageVector = Icons.Default.Share, contentDescription = "Share / Upload to Drive App")
                                     }
 
                                     IconButton(

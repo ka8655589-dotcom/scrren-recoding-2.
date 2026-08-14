@@ -52,6 +52,7 @@ fun AppNavigation(viewModel: MainViewModel) {
     val driveConnected by viewModel.driveConnected.collectAsStateWithLifecycle()
     val driveAccount by viewModel.driveAccount.collectAsStateWithLifecycle()
     val driveFolder by viewModel.driveFolder.collectAsStateWithLifecycle()
+    val driveOAuthToken by viewModel.driveOAuthToken.collectAsStateWithLifecycle()
     val videoResolution by viewModel.videoResolution.collectAsStateWithLifecycle()
     val cameraOption by viewModel.cameraOption.collectAsStateWithLifecycle()
     val autoDeleteAfterSync by viewModel.autoDeleteAfterSync.collectAsStateWithLifecycle()
@@ -109,6 +110,7 @@ fun AppNavigation(viewModel: MainViewModel) {
                     timeRangeTag = timeRangeTag,
                     lastStopReason = lastStopReason,
                     recordings = recordings,
+                    cameraOption = cameraOption,
                     s23StealthMode = s23StealthMode,
                     onNavigateToRecordings = {
                         navController.navigate(Screen.Recordings.route)
@@ -134,6 +136,7 @@ fun AppNavigation(viewModel: MainViewModel) {
                     driveConnected = driveConnected,
                     driveAccount = driveAccount,
                     driveFolder = driveFolder,
+                    driveOAuthToken = driveOAuthToken,
                     videoResolution = videoResolution,
                     cameraOption = cameraOption,
                     autoDeleteAfterSync = autoDeleteAfterSync,

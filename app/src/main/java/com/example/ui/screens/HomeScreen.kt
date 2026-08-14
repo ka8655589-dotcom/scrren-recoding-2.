@@ -64,6 +64,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.RecordingEntity
+import com.example.ui.components.CameraPreviewCard
 import com.example.viewmodel.MainViewModel
 import java.util.Locale
 
@@ -79,6 +80,7 @@ fun HomeScreen(
     timeRangeTag: String,
     lastStopReason: String?,
     recordings: List<RecordingEntity>,
+    cameraOption: String = "Front Camera",
     s23StealthMode: Boolean = true,
     batteryShieldEnabled: Boolean = false,
     onNavigateToRecordings: () -> Unit
@@ -184,6 +186,17 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+
+        // Live Hardware Camera Viewfinder & Flip Controls
+        item {
+            CameraPreviewCard(
+                cameraOption = cameraOption,
+                isRecording = isRecording,
+                onSwitchCameraOption = { newOption ->
+                    viewModel.updateCameraOption(newOption)
+                }
+            )
         }
 
         // Hero Record Control Hub
