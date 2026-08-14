@@ -122,7 +122,7 @@ class RealCameraRecorder(private val context: Context) {
         currentCameraId = selectedId
 
         try {
-            setupMediaRecorder(outputFile, resolution, recordAudio)
+            setupMediaRecorder(outputFile, resolution, recordAudio, selectedId)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize MediaRecorder: ${e.message}", e)
             onError("MediaRecorder init failed: ${e.message}")
@@ -158,7 +158,7 @@ class RealCameraRecorder(private val context: Context) {
     }
 
     @Suppress("DEPRECATION")
-    private fun setupMediaRecorder(outputFile: File, resolution: String, recordAudio: Boolean) {
+    private fun setupMediaRecorder(outputFile: File, resolution: String, recordAudio: Boolean, cameraId: String) {
         mediaRecorder?.release()
         val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             MediaRecorder(context)
@@ -176,12 +176,12 @@ class RealCameraRecorder(private val context: Context) {
             try {
                 recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
                 isAudioSourceSet = true
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 try {
                     recorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER)
                     isAudioSourceSet = true
-                } catch (e2: Exception) {
-                    Log.w(TAG, "Audio source could not be set: ${e2.message}")
+                } catch (e2: Throwable) {
+                    Log.w(TAG, "Audio source unavailable: ${e2.message}")
                 }
             }
         }
@@ -190,17 +190,30 @@ class RealCameraRecorder(private val context: Context) {
         recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
         recorder.setOutputFile(outputFile.absolutePath)
 
-        val (width, height, bitRate) = when (resolution) {
-            "1080p" -> Triple(1920, 1080, 6_000_000)
-            "720p" -> Triple(1280, 720, 3_000_000)
-            "360p" -> Triple(640, 360, 1_000_000)
-            "180p" -> Triple(320, 240, 500_000)
-            else -> Triple(1280, 720, 3_000_000)
+        val (targetWidth, targetHeight, bitRate) = when (resolution) {
+            "1080p" -> Triple(1920, 1080, 5_000_000)
+            "720p" -> Triple(1280, 720, 2_500_000)
+            "360p" -> Triple(640, 360, 800_000)
+            "180p" -> Triple(320, 240, 400_000)
+            else -> Triple(1280, 720, 2_500_000)
+        }
+
+        val actualSize = try {
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            val supportedSizes = map?.getOutputSizes(MediaRecorder::class.java)
+                ?: map?.getOutputSizes(SurfaceTexture::class.java)
+            
+            supportedSizes?.firstOrNull { it.width == targetWidth && it.height == targetHeight }
+                ?: supportedSizes?.minByOrNull { Math.abs(it.width * it.height - (targetWidth * targetHeight)) }
+                ?: Size(targetWidth, targetHeight)
+        } catch (e: Throwable) {
+            Size(targetWidth, targetHeight)
         }
 
         recorder.setVideoEncodingBitRate(bitRate)
         recorder.setVideoFrameRate(30)
-        recorder.setVideoSize(width, height)
+        recorder.setVideoSize(actualSize.width, actualSize.height)
         recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
 
         if (isAudioSourceSet) {
@@ -208,8 +221,8 @@ class RealCameraRecorder(private val context: Context) {
                 recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
                 recorder.setAudioSamplingRate(44100)
                 recorder.setAudioEncodingBitRate(128000)
-            } catch (e: Exception) {
-                Log.w(TAG, "Audio encoder config notice: ${e.message}")
+            } catch (e: Throwable) {
+                Log.w(TAG, "Audio encoder config fallback: ${e.message}")
             }
         }
 
@@ -220,7 +233,7 @@ class RealCameraRecorder(private val context: Context) {
             } else {
                 recorder.setOrientationHint(90)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             // ignore orientation hint failure
         }
 

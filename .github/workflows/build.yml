@@ -29,14 +29,20 @@ jobs:
         with:
           validate-wrappers: false
 
-      - name: Ensure valid Gradle Wrapper
-        run: gradle wrapper
+      - name: Prepare Keystore and Environment
+        run: |
+          if [ -f "debug.keystore.base64" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore || true
+          fi
+          if [ ! -f ".env" ]; then
+            cp .env.example .env || touch .env
+          fi
 
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: gradle assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

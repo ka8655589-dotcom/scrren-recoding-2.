@@ -297,6 +297,14 @@ fun Camera2TexturePreview(
                             }
                             if (chosenId == null) chosenId = cameraIds.firstOrNull() ?: return
 
+                            val chosenCharacteristics = manager.getCameraCharacteristics(chosenId)
+                            val map = chosenCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                            val previewSizes = map?.getOutputSizes(SurfaceTexture::class.java)
+                            val optimalSize = previewSizes?.firstOrNull { it.width <= 1280 && it.height <= 720 }
+                                ?: previewSizes?.firstOrNull()
+                                ?: android.util.Size(640, 480)
+                            st.setDefaultBufferSize(optimalSize.width, optimalSize.height)
+
                             bgThread = HandlerThread("CameraPreviewThread").apply {
                                 start()
                                 bgHandler = Handler(looper)
