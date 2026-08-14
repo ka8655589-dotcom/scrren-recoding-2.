@@ -50,6 +50,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -77,9 +80,11 @@ fun HomeScreen(
     lastStopReason: String?,
     recordings: List<RecordingEntity>,
     s23StealthMode: Boolean = true,
+    batteryShieldEnabled: Boolean = false,
     onNavigateToRecordings: () -> Unit
 ) {
     val context = LocalContext.current
+    var selectedVideoForPlayer by remember { mutableStateOf<RecordingEntity?>(null) }
 
     // Pulsing animation for record button when active
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -282,14 +287,17 @@ fun HomeScreen(
 
         // Low Battery Shield Protection Status Card
         item {
+            val isShieldActive = batteryShieldEnabled && batteryThreshold > 0
+            val isBatteryLow = isShieldActive && batteryLevel > 0 && batteryLevel <= batteryThreshold
+
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (batteryLevel <= batteryThreshold) Color(0xFFFEF2F2) else MaterialTheme.colorScheme.surface
+                    containerColor = if (isBatteryLow) Color(0xFFFEF2F2) else MaterialTheme.colorScheme.surface
                 ),
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
-                    if (batteryLevel <= batteryThreshold) Color(0xFFFCA5A5) else MaterialTheme.colorScheme.outlineVariant
+                    if (isBatteryLow) Color(0xFFFCA5A5) else MaterialTheme.colorScheme.outlineVariant
                 ),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -304,12 +312,12 @@ fun HomeScreen(
                             .size(48.dp)
                             .clip(CircleShape)
                             .background(
-                                if (batteryLevel <= batteryThreshold) Color(0xFFEF4444) else Color(0xFF10B981)
+                                if (isBatteryLow) Color(0xFFEF4444) else Color(0xFF10B981)
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (batteryLevel <= batteryThreshold) Icons.Default.BatteryAlert else Icons.Default.Shield,
+                            imageVector = if (isBatteryLow) Icons.Default.BatteryAlert else Icons.Default.Shield,
                             contentDescription = null,
                             tint = Color.White
                         )
@@ -331,24 +339,24 @@ fun HomeScreen(
                             Text(
                                 text = "$batteryLevel%",
                                 fontWeight = FontWeight.Bold,
-                                color = if (batteryLevel <= batteryThreshold) Color(0xFFDC2626) else Color(0xFF059669)
+                                color = if (isBatteryLow) Color(0xFFDC2626) else Color(0xFF059669)
                             )
                         }
 
                         Text(
-                            text = "Auto-stops recording if battery falls below $batteryThreshold%",
+                            text = if (isShieldActive) "Auto-stops recording if battery falls below $batteryThreshold%" else "Shield Disabled • Continuous uninterrupted 24H recording",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
                         Spacer(modifier = Modifier.height(6.dp))
                         LinearProgressIndicator(
-                            progress = { batteryLevel / 100f },
+                            progress = { (batteryLevel.coerceIn(0, 100)) / 100f },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(6.dp)
                                 .clip(RoundedCornerShape(3.dp)),
-                            color = if (batteryLevel <= batteryThreshold) Color(0xFFDC2626) else Color(0xFF10B981),
+                            color = if (isBatteryLow) Color(0xFFDC2626) else Color(0xFF10B981),
                             trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
                     }
@@ -500,6 +508,7 @@ fun HomeScreen(
             items(recordings.take(3)) { recording ->
                 RecentClipCard(
                     recording = recording,
+                    onClick = { selectedVideoForPlayer = recording },
                     onUploadDrive = { viewModel.uploadRecordingToDrive(recording) },
                     onDelete = { viewModel.deleteRecording(recording) }
                 )
@@ -510,18 +519,46 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+
+    selectedVideoForPlayer?.let { recording ->
+        VideoPlayerDialog(
+            recording = recording,
+            onDismiss = { selectedVideoForPlayer = null },
+            onUploadDrive = {
+                viewModel.uploadRecordingToDrive(recording)
+                selectedVideoForPlayer = null
+            },
+            onSaveToGallery = {
+                viewModel.saveVideoToGallery(context, recording)
+                selectedVideoForPlayer = null
+            },
+            onDeleteClip = {
+                viewModel.deleteRecording(recording)
+                selectedVideoForPlayer = null
+            },
+            onOpenExternal = {
+                viewModel.openVideoInExternalPlayer(context, recording)
+            },
+            onShare = {
+                viewModel.shareVideo(context, recording)
+            }
+        )
+    }
 }
 
 @Composable
 fun RecentClipCard(
     recording: RecordingEntity,
+    onClick: () -> Unit = {},
     onUploadDrive: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
     ) {
         Row(
             modifier = Modifier

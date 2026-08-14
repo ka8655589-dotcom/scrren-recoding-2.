@@ -39,6 +39,7 @@ fun AppNavigation(viewModel: MainViewModel) {
     val totalDuration by viewModel.totalDurationSeconds.collectAsStateWithLifecycle()
     val chunkDuration by viewModel.chunkDurationSeconds.collectAsStateWithLifecycle()
     val batteryLevel by viewModel.currentBatteryLevel.collectAsStateWithLifecycle()
+    val batteryShieldEnabled by viewModel.batteryShieldEnabled.collectAsStateWithLifecycle()
     val batteryThreshold by viewModel.batteryThreshold.collectAsStateWithLifecycle()
     val chunkIndex by viewModel.currentChunkIndex.collectAsStateWithLifecycle()
     val timeRangeTag by viewModel.activeTimeRangeTag.collectAsStateWithLifecycle()
@@ -103,6 +104,7 @@ fun AppNavigation(viewModel: MainViewModel) {
                     chunkDuration = chunkDuration,
                     batteryLevel = batteryLevel,
                     batteryThreshold = batteryThreshold,
+                    batteryShieldEnabled = batteryShieldEnabled,
                     chunkIndex = chunkIndex,
                     timeRangeTag = timeRangeTag,
                     lastStopReason = lastStopReason,
@@ -125,6 +127,7 @@ fun AppNavigation(viewModel: MainViewModel) {
                 SettingsScreen(
                     viewModel = viewModel,
                     batteryThreshold = batteryThreshold,
+                    batteryShieldEnabled = batteryShieldEnabled,
                     splitDurationMins = splitDurationMins,
                     autoUploadDrive = autoUploadDrive,
                     recordAudio = recordAudio,

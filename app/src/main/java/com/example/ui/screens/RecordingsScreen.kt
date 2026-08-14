@@ -76,8 +76,11 @@ fun RecordingsScreen(
         val mb = bytes / (1024f * 1024f)
         if (mb >= 1024) {
             String.format(Locale.getDefault(), "%.2f GB", mb / 1024f)
-        } else {
+        } else if (mb >= 1.0) {
             String.format(Locale.getDefault(), "%.1f MB", mb)
+        } else {
+            val kb = bytes / 1024f
+            String.format(Locale.getDefault(), "%.0f KB", kb)
         }
     }
 
@@ -395,6 +398,12 @@ fun RecordingsScreen(
             onDeleteClip = {
                 viewModel.deleteRecording(recording)
                 selectedVideoForPlayer = null
+            },
+            onOpenExternal = {
+                viewModel.openVideoInExternalPlayer(context, recording)
+            },
+            onShare = {
+                viewModel.shareVideo(context, recording)
             }
         )
     }

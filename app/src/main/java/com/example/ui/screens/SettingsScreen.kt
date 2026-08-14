@@ -14,7 +14,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryAlert
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -22,15 +24,18 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
@@ -44,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,6 +59,7 @@ import com.example.viewmodel.MainViewModel
 fun SettingsScreen(
     viewModel: MainViewModel,
     batteryThreshold: Int,
+    batteryShieldEnabled: Boolean = false,
     splitDurationMins: Int,
     autoUploadDrive: Boolean,
     recordAudio: Boolean,
@@ -206,8 +213,11 @@ fun SettingsScreen(
             }
         }
 
-        // Low Battery Protection Rule Card
+        // Battery Optimization & Screen-Off Continuous Recording Card
         item {
+            val context = LocalContext.current
+            val isIgnored = remember(context) { viewModel.isBatteryOptimizationIgnored(context) }
+
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -216,49 +226,133 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.BatteryAlert,
+                            imageVector = Icons.Default.PowerSettingsNew,
                             contentDescription = null,
-                            tint = Color(0xFFDC2626)
+                            tint = if (isIgnored) Color(0xFF10B981) else Color(0xFFF59E0B)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Low Battery Shield Protection",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                        Column {
+                            Text(
+                                text = "Battery Regulation & Screen-Off Recording",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = if (isIgnored) "Unrestricted Background • Screen-Off Active" else "Battery Optimization Active (May pause when screen off)",
+                                fontSize = 12.sp,
+                                color = if (isIgnored) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "Current Threshold: Auto-Stop at $batteryThreshold%",
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "Recording automatically stops and saves when battery falls below this level to prevent device shutdown.",
+                        text = "To allow 24-hour continuous recording even when your screen is turned off or device enters sleep mode, grant unrestricted battery background execution.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Slider(
-                        value = batteryThreshold.toFloat(),
-                        onValueChange = { viewModel.updateBatteryThreshold(it.toInt()) },
-                        valueRange = 10f..30f,
-                        steps = 3,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Row(
+                    Button(
+                        onClick = { viewModel.requestIgnoreBatteryOptimizations(context) },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isIgnored) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.primary,
+                            contentColor = if (isIgnored) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary
+                        )
                     ) {
-                        Text("10%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("15%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("20% (Default)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        Text("25%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("30%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(
+                            imageVector = if (isIgnored) Icons.Default.CheckCircle else Icons.Default.BatteryChargingFull,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isIgnored) "Battery Exemption Active (Re-configure)" else "Grant Unrestricted Screen-Off Battery Exemption")
+                    }
+                }
+            }
+        }
+
+        // Low Battery Protection Rule Card
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.BatteryAlert,
+                                contentDescription = null,
+                                tint = if (batteryShieldEnabled) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Low Battery Shield Protection",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = if (batteryShieldEnabled) "Active • Stops at $batteryThreshold%" else "Disabled (24H uninterrupted)",
+                                    fontSize = 12.sp,
+                                    color = if (batteryShieldEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = batteryShieldEnabled,
+                            onCheckedChange = { viewModel.updateBatteryShieldEnabled(it) }
+                        )
+                    }
+
+                    if (batteryShieldEnabled) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "Recording automatically stops and saves when battery falls below $batteryThreshold% (only when not plugged into charger).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Slider(
+                            value = (if (batteryThreshold < 5) 15 else batteryThreshold).toFloat(),
+                            onValueChange = { viewModel.updateBatteryThreshold(it.toInt()) },
+                            valueRange = 5f..30f,
+                            steps = 4,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("5%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("10%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("15%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("20%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("30%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Recording will continue uninterrupted without stopping on low battery.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

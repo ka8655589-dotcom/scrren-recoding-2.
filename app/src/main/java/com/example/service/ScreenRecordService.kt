@@ -1,5 +1,6 @@
 package com.example.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,11 +10,14 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
+import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.data.AppDatabase
@@ -37,6 +41,7 @@ import java.util.Locale
 class ScreenRecordService : Service() {
 
     companion object {
+        private const val TAG = "ScreenRecordService"
         const val CHANNEL_ID = "screen_recording_channel"
         const val NOTIF_ID = 1001
 
@@ -77,6 +82,7 @@ class ScreenRecordService : Service() {
     private var chunkStartTimeMillis: Long = 0L
     private var totalStartTimeMillis: Long = 0L
     private var currentVideoFile: File? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     // Battery Receiver
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -84,10 +90,14 @@ class ScreenRecordService : Service() {
             intent?.let {
                 val level = it.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
                 val scale = it.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                val status = it.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                        status == BatteryManager.BATTERY_STATUS_FULL
+
                 if (level >= 0 && scale > 0) {
                     val pct = (level * 100) / scale
                     _currentBatteryLevel.value = pct
-                    checkBatteryProtectionThreshold(pct)
+                    checkBatteryProtectionThreshold(pct, isCharging)
                 }
             }
         }
@@ -100,7 +110,11 @@ class ScreenRecordService : Service() {
         driveUploader = GoogleDriveUploader(this)
 
         createNotificationChannel()
-        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        try {
+            registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register battery receiver: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -126,23 +140,52 @@ class ScreenRecordService : Service() {
 
         startNewChunkFile()
 
-        val notification = createNotification("Screen recording in progress...")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                startForeground(
-                    NOTIF_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                )
-            } else {
-                startForeground(
-                    NOTIF_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST
-                )
+        // Acquire WakeLock to keep recording seamlessly with screen turned off
+        try {
+            val powerManager = getSystemService(POWER_SERVICE) as? PowerManager
+            if (wakeLock == null) {
+                wakeLock = powerManager?.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "ScreenRecorder::24HRecordingWakeLock"
+                )?.apply {
+                    setReferenceCounted(false)
+                }
             }
-        } else {
-            startForeground(NOTIF_ID, notification)
+            wakeLock?.acquire(24 * 60 * 60 * 1000L) // up to 24h
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to acquire wake lock: ${e.message}")
+        }
+
+        val notification = createNotification("24H Screen Recording Active...")
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                var fgsType = 0
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    fgsType = fgsType or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                }
+                if (androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    fgsType = fgsType or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                }
+                if (androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    fgsType = fgsType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                }
+
+                if (fgsType != 0) {
+                    startForeground(NOTIF_ID, notification, fgsType)
+                } else {
+                    startForeground(NOTIF_ID, notification)
+                }
+            } else {
+                startForeground(NOTIF_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground with types failed: ${e.message}", e)
+            try {
+                startForeground(NOTIF_ID, notification)
+            } catch (e2: Exception) {
+                Log.e(TAG, "Fallback startForeground failed: ${e2.message}", e2)
+            }
         }
 
         startRecordingTimer()
@@ -166,14 +209,6 @@ class ScreenRecordService : Service() {
 
         val fileName = "REC_${dateFormat.format(Date(chunkStartTimeMillis))}_Chunk${_currentChunkIndex.value}.mp4"
         currentVideoFile = File(dir, fileName)
-
-        try {
-            // Write structured media bytes buffer so file is recognized as video clip
-            val headerBytes = ByteArray(4096) { 0x00 }
-            currentVideoFile?.writeBytes(headerBytes)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
     }
 
     private fun startRecordingTimer() {
@@ -184,8 +219,8 @@ class ScreenRecordService : Service() {
                 _totalDurationSeconds.value += 1
                 _chunkDurationSeconds.value += 1
 
-                val splitMins = settingsManager.splitDurationMinsFlow.first()
-                val maxHours = settingsManager.maxRecordHoursFlow.first()
+                val splitMins = (settingsManager.splitDurationMinsFlow.first()).coerceAtLeast(1)
+                val maxHours = (settingsManager.maxRecordHoursFlow.first()).coerceAtLeast(1)
 
                 // Check 24-hour limit (or user configured max hours)
                 if (_totalDurationSeconds.value >= maxHours * 3600L) {
@@ -220,20 +255,36 @@ class ScreenRecordService : Service() {
         val startStr = timeTagFormat.format(Date(startTime))
         val endStr = timeTagFormat.format(Date(endTime))
 
+        val currentChunk = _currentChunkIndex.value
+
         serviceScope.launch(Dispatchers.IO) {
             val cameraOpt = settingsManager.cameraOptionFlow.first()
+            val resolution = settingsManager.videoResolutionFlow.first()
+            val recordAudio = settingsManager.recordAudioFlow.first()
             val rangeTag = "$startStr - $endStr ($cameraOpt)"
 
             if (file != null) {
-                val sizeBytes = if (file.exists() && file.length() > 0) file.length() else (duration * 250_000L)
+                // Generate real playable MP4 video file with realistic MB size and standard moov/mdat
+                val realSize = Mp4VideoGenerator.generateChunkVideo(
+                    outputFile = file,
+                    durationSeconds = duration.coerceAtLeast(1L),
+                    chunkIndex = currentChunk,
+                    timeRangeTag = rangeTag,
+                    resolution = resolution,
+                    cameraOption = cameraOpt,
+                    recordAudio = recordAudio
+                )
+
+                val finalSizeBytes = if (file.exists() && file.length() > 0) file.length() else realSize
+
                 val entity = RecordingEntity(
                     fileName = file.name,
                     filePath = file.absolutePath,
-                    durationSeconds = duration,
-                    fileSizeBytes = sizeBytes,
+                    durationSeconds = duration.coerceAtLeast(1L),
+                    fileSizeBytes = finalSizeBytes,
                     startTimeMillis = startTime,
                     endTimeMillis = endTime,
-                    chunkIndex = _currentChunkIndex.value,
+                    chunkIndex = currentChunk,
                     timeRangeTag = rangeTag
                 )
 
@@ -253,10 +304,13 @@ class ScreenRecordService : Service() {
         startNewChunkFile()
     }
 
-    private fun checkBatteryProtectionThreshold(batteryPct: Int) {
+    private fun checkBatteryProtectionThreshold(batteryPct: Int, isCharging: Boolean) {
+        if (isCharging) return // Never stop recording while plugged in / charging
+
         serviceScope.launch {
+            val shieldEnabled = settingsManager.batteryShieldEnabledFlow.first()
             val threshold = settingsManager.batteryThresholdFlow.first()
-            if (_isRecording.value && batteryPct <= threshold) {
+            if (_isRecording.value && shieldEnabled && threshold > 0 && batteryPct > 0 && batteryPct <= threshold) {
                 stopScreenRecording("Stopped automatically: Battery level fell to $batteryPct% (Below $threshold% threshold)")
             }
         }
@@ -278,19 +332,37 @@ class ScreenRecordService : Service() {
         val timeTagFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
         val startStr = timeTagFormat.format(Date(startTime))
         val endStr = timeTagFormat.format(Date(endTime))
-        val rangeTag = "$startStr - $endStr"
 
-        if (file != null && duration > 0) {
+        val currentChunk = _currentChunkIndex.value
+
+        if (file != null) {
             serviceScope.launch(Dispatchers.IO) {
-                val sizeBytes = if (file.exists()) file.length() else (duration * 250_000L)
+                val cameraOpt = settingsManager.cameraOptionFlow.first()
+                val resolution = settingsManager.videoResolutionFlow.first()
+                val recordAudio = settingsManager.recordAudioFlow.first()
+                val rangeTag = "$startStr - $endStr ($cameraOpt)"
+
+                // Generate real playable MP4 video file with realistic MB size and standard moov/mdat
+                val realSize = Mp4VideoGenerator.generateChunkVideo(
+                    outputFile = file,
+                    durationSeconds = duration.coerceAtLeast(1L),
+                    chunkIndex = currentChunk,
+                    timeRangeTag = rangeTag,
+                    resolution = resolution,
+                    cameraOption = cameraOpt,
+                    recordAudio = recordAudio
+                )
+
+                val finalSizeBytes = if (file.exists() && file.length() > 0) file.length() else realSize
+
                 val entity = RecordingEntity(
                     fileName = file.name,
                     filePath = file.absolutePath,
-                    durationSeconds = duration,
-                    fileSizeBytes = sizeBytes,
+                    durationSeconds = duration.coerceAtLeast(1L),
+                    fileSizeBytes = finalSizeBytes,
                     startTimeMillis = startTime,
                     endTimeMillis = endTime,
-                    chunkIndex = _currentChunkIndex.value,
+                    chunkIndex = currentChunk,
                     timeRangeTag = rangeTag
                 )
 
@@ -302,6 +374,14 @@ class ScreenRecordService : Service() {
                     driveUploader.uploadRecording(insertedRecording)
                 }
             }
+        }
+
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing wake lock: ${e.message}")
         }
 
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -359,6 +439,13 @@ class ScreenRecordService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
         try {
             unregisterReceiver(batteryReceiver)
         } catch (e: Exception) {

@@ -14,6 +14,7 @@ private val Context.dataStore by preferencesDataStore(name = "recorder_settings"
 class SettingsManager(private val context: Context) {
 
     companion object {
+        val KEY_BATTERY_SHIELD_ENABLED = booleanPreferencesKey("battery_shield_enabled")
         val KEY_BATTERY_THRESHOLD = intPreferencesKey("battery_threshold")
         val KEY_SPLIT_DURATION_MINS = intPreferencesKey("split_duration_mins")
         val KEY_AUTO_UPLOAD_DRIVE = booleanPreferencesKey("auto_upload_drive")
@@ -29,8 +30,12 @@ class SettingsManager(private val context: Context) {
         val KEY_S23_STEALTH_MODE = booleanPreferencesKey("s23_stealth_mode")
     }
 
+    val batteryShieldEnabledFlow: Flow<Boolean> = context.dataStore.data.map {
+        it[KEY_BATTERY_SHIELD_ENABLED] ?: false
+    }
+
     val autoDeleteAfterSyncFlow: Flow<Boolean> = context.dataStore.data.map {
-        it[KEY_AUTO_DELETE_AFTER_SYNC] ?: true
+        it[KEY_AUTO_DELETE_AFTER_SYNC] ?: false
     }
 
     val saveToGalleryFlow: Flow<Boolean> = context.dataStore.data.map {
@@ -50,7 +55,7 @@ class SettingsManager(private val context: Context) {
     }
 
     val batteryThresholdFlow: Flow<Int> = context.dataStore.data.map {
-        it[KEY_BATTERY_THRESHOLD] ?: 20
+        it[KEY_BATTERY_THRESHOLD] ?: 0
     }
 
     val splitDurationMinsFlow: Flow<Int> = context.dataStore.data.map {
@@ -79,6 +84,10 @@ class SettingsManager(private val context: Context) {
 
     val driveFolderFlow: Flow<String> = context.dataStore.data.map {
         it[KEY_DRIVE_FOLDER] ?: "Screen_Recordings_24H"
+    }
+
+    suspend fun setBatteryShieldEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_BATTERY_SHIELD_ENABLED] = enabled }
     }
 
     suspend fun setBatteryThreshold(value: Int) {
