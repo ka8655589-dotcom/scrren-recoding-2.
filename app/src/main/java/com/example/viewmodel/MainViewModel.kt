@@ -56,6 +56,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val driveAccount = settingsManager.driveAccountFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "ka8655589@gmail.com")
     val driveFolder = settingsManager.driveFolderFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Screen_Recordings_24H")
     val driveOAuthToken = settingsManager.driveOAuthTokenFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val serviceAccountJson = settingsManager.serviceAccountJsonFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
     val videoResolution = settingsManager.videoResolutionFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "720p")
     val cameraOption = settingsManager.cameraOptionFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Screen Only")
     val autoDeleteAfterSync = settingsManager.autoDeleteAfterSyncFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -169,6 +170,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateDriveOAuthToken(token: String) {
         viewModelScope.launch { settingsManager.setDriveOAuthToken(token) }
+    }
+
+    fun updateServiceAccountJson(json: String) {
+        viewModelScope.launch { settingsManager.setServiceAccountJson(json) }
     }
 
     fun testDriveConnection(token: String, folder: String, onResult: (Boolean, String) -> Unit) {

@@ -68,6 +68,7 @@ fun SettingsScreen(
     driveAccount: String,
     driveFolder: String,
     driveOAuthToken: String = "",
+    serviceAccountJson: String = "",
     videoResolution: String = "720p",
     cameraOption: String = "Screen Only",
     autoDeleteAfterSync: Boolean = true,
@@ -77,6 +78,7 @@ fun SettingsScreen(
     var accountInput by remember(driveAccount) { mutableStateOf(driveAccount) }
     var folderInput by remember(driveFolder) { mutableStateOf(driveFolder) }
     var tokenInput by remember(driveOAuthToken) { mutableStateOf(driveOAuthToken) }
+    var jsonInput by remember(serviceAccountJson) { mutableStateOf(serviceAccountJson) }
     var testStatusMessage by remember { mutableStateOf<String?>(null) }
     var isTestingDrive by remember { mutableStateOf(false) }
 
@@ -490,18 +492,40 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     OutlinedTextField(
+                        value = jsonInput,
+                        onValueChange = {
+                            jsonInput = it
+                            viewModel.updateServiceAccountJson(it)
+                        },
+                        label = { Text("Service Account JSON Key (Lifetime / Never Expires)") },
+                        leadingIcon = { Icon(imageVector = Icons.Default.Lock, contentDescription = null, tint = Color(0xFF10B981)) },
+                        placeholder = { Text("Paste contents of your downloaded .json file here...") },
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        supportingText = {
+                            Text(
+                                if (jsonInput.contains("private_key")) " Permanent Master Key Active! Uploads will run 24/7 without token expiration."
+                                else "Paste your downloaded Service Account JSON file text here for lifetime automatic uploads without token expiry."
+                            )
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
                         value = tokenInput,
                         onValueChange = {
                             tokenInput = it
                             viewModel.updateDriveOAuthToken(it)
                         },
-                        label = { Text("Google OAuth Access Token (Optional for REST upload)") },
+                        label = { Text("Temporary OAuth Token (Optional fallback)") },
                         leadingIcon = { Icon(imageVector = Icons.Default.Lock, contentDescription = null) },
                         placeholder = { Text("ya29.a0...") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         supportingText = {
-                            Text("If token is left empty, clips can be uploaded with 1 tap via 'Share to Drive' on each video.")
+                            Text("Alternative: Temporary token (expires after 1 hr) or use 'Share to Drive' on individual clips.")
                         }
                     )
 
@@ -528,11 +552,12 @@ fun SettingsScreen(
                     ) {
                         OutlinedButton(
                             onClick = {
-                                if (tokenInput.isBlank()) {
-                                    testStatusMessage = "Please enter an OAuth Access Token to test direct REST API upload, or use the Share icon on any video to upload via Google Drive App."
+                                val credsToTest = if (jsonInput.isNotBlank()) jsonInput else tokenInput
+                                if (credsToTest.isBlank()) {
+                                    testStatusMessage = "Please paste your Service Account JSON or an OAuth Access Token to test."
                                 } else {
                                     isTestingDrive = true
-                                    viewModel.testDriveConnection(tokenInput, folderInput) { success, msg ->
+                                    viewModel.testDriveConnection(credsToTest, folderInput) { success, msg ->
                                         isTestingDrive = false
                                         testStatusMessage = if (success) "Success: $msg" else "Error: $msg"
                                     }

@@ -24,6 +24,7 @@ class SettingsManager(private val context: Context) {
         val KEY_DRIVE_ACCOUNT = stringPreferencesKey("drive_account")
         val KEY_DRIVE_FOLDER = stringPreferencesKey("drive_folder")
         val KEY_DRIVE_OAUTH_TOKEN = stringPreferencesKey("drive_oauth_token")
+        val KEY_SERVICE_ACCOUNT_JSON = stringPreferencesKey("service_account_json")
         val KEY_VIDEO_RESOLUTION = stringPreferencesKey("video_resolution")
         val KEY_CAMERA_OPTION = stringPreferencesKey("camera_option")
         val KEY_AUTO_DELETE_AFTER_SYNC = booleanPreferencesKey("auto_delete_after_sync")
@@ -91,6 +92,10 @@ class SettingsManager(private val context: Context) {
         it[KEY_DRIVE_OAUTH_TOKEN] ?: ""
     }
 
+    val serviceAccountJsonFlow: Flow<String> = context.dataStore.data.map {
+        it[KEY_SERVICE_ACCOUNT_JSON] ?: ""
+    }
+
     suspend fun setBatteryShieldEnabled(enabled: Boolean) {
         context.dataStore.edit { it[KEY_BATTERY_SHIELD_ENABLED] = enabled }
     }
@@ -125,6 +130,10 @@ class SettingsManager(private val context: Context) {
 
     suspend fun setDriveOAuthToken(token: String) {
         context.dataStore.edit { it[KEY_DRIVE_OAUTH_TOKEN] = token }
+    }
+
+    suspend fun setServiceAccountJson(json: String) {
+        context.dataStore.edit { it[KEY_SERVICE_ACCOUNT_JSON] = json }
     }
 
     suspend fun setVideoResolution(resolution: String) {

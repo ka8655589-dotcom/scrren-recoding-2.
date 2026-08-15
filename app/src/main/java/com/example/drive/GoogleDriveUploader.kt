@@ -54,14 +54,29 @@ class GoogleDriveUploader(private val context: Context) {
             return@withContext false
         }
 
-        val oauthToken = settingsManager.driveOAuthTokenFlow.first().trim()
+        val saJson = settingsManager.serviceAccountJsonFlow.first().trim()
+        val directOAuthToken = settingsManager.driveOAuthTokenFlow.first().trim()
         val folderName = settingsManager.driveFolderFlow.first().ifBlank { "Screen_Recordings_24H" }
 
-        if (oauthToken.isBlank()) {
+        val activeToken = if (saJson.isNotEmpty()) {
+            val (token, err) = ServiceAccountAuth.getFreshAccessToken(saJson)
+            if (token == null) {
+                dao.updateRecording(
+                    recording.copy(
+                        uploadStatus = "FAILED",
+                        errorMessage = "Service Account Auth Error: $err"
+                    )
+                )
+                return@withContext false
+            }
+            token
+        } else if (directOAuthToken.isNotEmpty()) {
+            directOAuthToken
+        } else {
             dao.updateRecording(
                 recording.copy(
                     uploadStatus = "PENDING_AUTH",
-                    errorMessage = "Drive Token needed for auto-upload. Use 'Share' to upload via Drive App or add token in Settings."
+                    errorMessage = "No Service Account JSON or Drive Token configured. Paste JSON key or use 'Share to Drive'."
                 )
             )
             return@withContext false
@@ -77,12 +92,12 @@ class GoogleDriveUploader(private val context: Context) {
 
         try {
             // 1. Get or create the destination folder in Google Drive
-            val folderId = getOrCreateFolder(folderName, oauthToken)
+            val folderId = getOrCreateFolder(folderName, activeToken)
             if (folderId == null) {
                 dao.updateRecording(
                     recording.copy(
                         uploadStatus = "FAILED",
-                        errorMessage = "Could not create/access folder '$folderName' in Google Drive. Please check token permissions."
+                        errorMessage = "Could not create/access folder '$folderName' in Google Drive. Please check permissions."
                     )
                 )
                 return@withContext false
@@ -106,7 +121,7 @@ class GoogleDriveUploader(private val context: Context) {
 
             val uploadRequest = Request.Builder()
                 .url(DRIVE_UPLOAD_API)
-                .addHeader("Authorization", "Bearer $oauthToken")
+                .addHeader("Authorization", "Bearer $activeToken")
                 .post(multipartBody)
                 .build()
 
@@ -227,16 +242,28 @@ class GoogleDriveUploader(private val context: Context) {
     /**
      * Tests Drive connectivity and attempts to verify/create the designated folder.
      */
-    suspend fun testDriveConnection(token: String, folderName: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        if (token.isBlank()) {
-            return@withContext Pair(false, "OAuth token is empty")
+    suspend fun testDriveConnection(tokenOrJson: String, folderName: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val trimmed = tokenOrJson.trim()
+        if (trimmed.isBlank()) {
+            return@withContext Pair(false, "Credentials are empty. Please enter an OAuth Token or Service Account JSON.")
         }
+
+        val resolvedToken = if (trimmed.startsWith("{") && trimmed.contains("private_key")) {
+            val (token, err) = ServiceAccountAuth.getFreshAccessToken(trimmed)
+            if (token == null) {
+                return@withContext Pair(false, "Service Account Key error: $err")
+            }
+            token
+        } else {
+            trimmed
+        }
+
         try {
-            val folderId = getOrCreateFolder(folderName, token)
+            val folderId = getOrCreateFolder(folderName, resolvedToken)
             if (folderId != null) {
                 Pair(true, "Successfully connected! Google Drive folder '$folderName' is ready (ID: $folderId).")
             } else {
-                Pair(false, "Could not verify/create folder in Google Drive. Check token scopes.")
+                Pair(false, "Could not verify/create folder in Google Drive. Make sure the folder is shared with the Service Account email or check token scopes.")
             }
         } catch (e: Exception) {
             Pair(false, "Connection error: ${e.localizedMessage}")

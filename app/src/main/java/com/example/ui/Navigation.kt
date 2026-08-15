@@ -53,6 +53,7 @@ fun AppNavigation(viewModel: MainViewModel) {
     val driveAccount by viewModel.driveAccount.collectAsStateWithLifecycle()
     val driveFolder by viewModel.driveFolder.collectAsStateWithLifecycle()
     val driveOAuthToken by viewModel.driveOAuthToken.collectAsStateWithLifecycle()
+    val serviceAccountJson by viewModel.serviceAccountJson.collectAsStateWithLifecycle()
     val videoResolution by viewModel.videoResolution.collectAsStateWithLifecycle()
     val cameraOption by viewModel.cameraOption.collectAsStateWithLifecycle()
     val autoDeleteAfterSync by viewModel.autoDeleteAfterSync.collectAsStateWithLifecycle()
@@ -137,6 +138,7 @@ fun AppNavigation(viewModel: MainViewModel) {
                     driveAccount = driveAccount,
                     driveFolder = driveFolder,
                     driveOAuthToken = driveOAuthToken,
+                    serviceAccountJson = serviceAccountJson,
                     videoResolution = videoResolution,
                     cameraOption = cameraOption,
                     autoDeleteAfterSync = autoDeleteAfterSync,
