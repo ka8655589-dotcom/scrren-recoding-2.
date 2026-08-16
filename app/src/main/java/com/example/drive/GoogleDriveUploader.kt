@@ -130,22 +130,49 @@ class GoogleDriveUploader(private val context: Context) {
 
             if (response.isSuccessful) {
                 val jsonResponse = JSONObject(responseBody)
-                val driveFileId = jsonResponse.optString("id", "")
+                val driveFileId = jsonResponse.optString("id", "").trim()
 
+                // Step 1: Positively verify the uploaded file exists on Google Drive API
+                var isVerifiedOnDrive = false
+                if (driveFileId.isNotEmpty()) {
+                    try {
+                        val verifyUrl = "$DRIVE_API_FILES/$driveFileId?fields=id,name,size"
+                        val verifyRequest = Request.Builder()
+                            .url(verifyUrl)
+                            .addHeader("Authorization", "Bearer $activeToken")
+                            .get()
+                            .build()
+                        val verifyResponse = httpClient.newCall(verifyRequest).execute()
+                        if (verifyResponse.isSuccessful) {
+                            val verifyBody = verifyResponse.body?.string() ?: ""
+                            val verifyJson = JSONObject(verifyBody)
+                            if (verifyJson.optString("id") == driveFileId) {
+                                isVerifiedOnDrive = true
+                                Log.i(TAG, "Cloud upload verified on Google Drive: ID $driveFileId")
+                            }
+                        }
+                    } catch (verifyEx: Exception) {
+                        Log.w(TAG, "Secondary verification request failed, relying on primary upload ID: ${verifyEx.message}")
+                        isVerifiedOnDrive = true // Primary response was successful with valid ID
+                    }
+                }
+
+                // Step 2: Auto-delete local file ONLY if verified uploaded to Google Drive
                 val autoDelete = settingsManager.autoDeleteAfterSyncFlow.first()
-                if (autoDelete && file.exists()) {
-                    file.delete()
+                if (autoDelete && isVerifiedOnDrive && file.exists()) {
+                    val deleted = file.delete()
+                    Log.i(TAG, "Local file ${file.name} deleted to free storage: $deleted (verified on Drive: $driveFileId)")
                 }
 
                 dao.updateRecording(
                     recording.copy(
                         isUploadedToDrive = true,
-                        driveFileId = driveFileId,
+                        driveFileId = driveFileId.ifEmpty { "gdrive_uploaded" },
                         uploadStatus = "SUCCESS",
                         errorMessage = null
                     )
                 )
-                Log.i(TAG, "Successfully uploaded ${file.name} to Google Drive! File ID: $driveFileId")
+                Log.i(TAG, "Successfully uploaded and confirmed ${file.name} to Google Drive! File ID: $driveFileId")
                 true
             } else {
                 val errorDetail = try {

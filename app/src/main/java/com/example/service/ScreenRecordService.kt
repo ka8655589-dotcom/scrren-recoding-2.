@@ -139,6 +139,10 @@ class ScreenRecordService : Service() {
         totalStartTimeMillis = System.currentTimeMillis()
         chunkStartTimeMillis = totalStartTimeMillis
 
+        serviceScope.launch {
+            settingsManager.setWasRecording(true)
+        }
+
         startNewChunkFile()
 
         // Start hardware camera recording
@@ -376,6 +380,10 @@ class ScreenRecordService : Service() {
         _isRecording.value = false
         timerJob?.cancel()
         _lastStopReason.value = reason
+
+        serviceScope.launch {
+            settingsManager.setWasRecording(false)
+        }
 
         // Stop real hardware camera
         realCameraRecorder?.stopRecording()

@@ -73,7 +73,8 @@ fun SettingsScreen(
     cameraOption: String = "Screen Only",
     autoDeleteAfterSync: Boolean = true,
     saveToGallery: Boolean = false,
-    s23StealthMode: Boolean = true
+    s23StealthMode: Boolean = true,
+    autoStartOnBoot: Boolean = true
 ) {
     var accountInput by remember(driveAccount) { mutableStateOf(driveAccount) }
     var folderInput by remember(driveFolder) { mutableStateOf(driveFolder) }
@@ -697,6 +698,60 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Disguises app notification bar and status headers as system Camera background service with camera icon.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        // Auto-Restart on Phone Reboot Card
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PowerSettingsNew,
+                                contentDescription = null,
+                                tint = Color(0xFF10B981)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Auto-Restart on Phone Reboot",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = "BOOT_COMPLETED Receiver Active",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF10B981),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = autoStartOnBoot,
+                            onCheckedChange = { viewModel.updateAutoStartOnBoot(it) }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Automatically restarts background recording service whenever your mobile phone reboots or powers on.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -62,6 +62,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val autoDeleteAfterSync = settingsManager.autoDeleteAfterSyncFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val saveToGallery = settingsManager.saveToGalleryFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val s23StealthMode = settingsManager.s23StealthModeFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val autoStartOnBoot = settingsManager.autoStartOnBootFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     fun startRecording(context: Context) {
         try {
@@ -206,6 +207,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateAutoDeleteAfterSync(value: Boolean) {
         viewModelScope.launch { settingsManager.setAutoDeleteAfterSync(value) }
+    }
+
+    fun updateAutoStartOnBoot(value: Boolean) {
+        viewModelScope.launch { settingsManager.setAutoStartOnBoot(value) }
     }
 
     fun updateSaveToGallery(value: Boolean) {
