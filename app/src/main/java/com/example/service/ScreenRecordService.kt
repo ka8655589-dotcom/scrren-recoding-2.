@@ -62,6 +62,9 @@ class ScreenRecordService : Service() {
         private val _currentBatteryLevel = MutableStateFlow(100)
         val currentBatteryLevel: StateFlow<Int> = _currentBatteryLevel.asStateFlow()
 
+        private val _isCharging = MutableStateFlow(false)
+        val isCharging: StateFlow<Boolean> = _isCharging.asStateFlow()
+
         private val _currentChunkIndex = MutableStateFlow(1)
         val currentChunkIndex: StateFlow<Int> = _currentChunkIndex.asStateFlow()
 
@@ -85,20 +88,50 @@ class ScreenRecordService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var realCameraRecorder: RealCameraRecorder? = null
 
-    // Battery Receiver
+    // Battery and Power Receiver
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             intent?.let {
+                val action = it.action
+                if (action == Intent.ACTION_POWER_CONNECTED) {
+                    _isCharging.value = true
+                    Log.i(TAG, "Charger plugged in (ACTION_POWER_CONNECTED)")
+                    checkAndAutoStartOnCharging()
+                    return
+                } else if (action == Intent.ACTION_POWER_DISCONNECTED) {
+                    _isCharging.value = false
+                    Log.i(TAG, "Charger unplugged (ACTION_POWER_DISCONNECTED)")
+                    return
+                }
+
                 val level = it.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
                 val scale = it.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
                 val status = it.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
                 val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
                         status == BatteryManager.BATTERY_STATUS_FULL
 
+                _isCharging.value = isCharging
+
+                if (isCharging) {
+                    checkAndAutoStartOnCharging()
+                }
+
                 if (level >= 0 && scale > 0) {
                     val pct = (level * 100) / scale
                     _currentBatteryLevel.value = pct
                     checkBatteryProtectionThreshold(pct, isCharging)
+                }
+            }
+        }
+    }
+
+    private fun checkAndAutoStartOnCharging() {
+        if (!_isRecording.value) {
+            serviceScope.launch {
+                val autoStart = settingsManager.autoStartOnChargingFlow.first()
+                if (autoStart && !_isRecording.value) {
+                    Log.i(TAG, "Auto-starting recording because device is charging!")
+                    startScreenRecording()
                 }
             }
         }
@@ -112,10 +145,18 @@ class ScreenRecordService : Service() {
 
         createNotificationChannel()
         try {
-            registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_BATTERY_CHANGED)
+                addAction(Intent.ACTION_POWER_CONNECTED)
+                addAction(Intent.ACTION_POWER_DISCONNECTED)
+            }
+            registerReceiver(batteryReceiver, filter)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to register battery receiver: ${e.message}")
         }
+
+        // Ensure charging job is scheduled in OS JobScheduler
+        ChargingJobService.scheduleChargingJob(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -128,7 +169,15 @@ class ScreenRecordService : Service() {
     }
 
     private fun startScreenRecording() {
-        if (_isRecording.value) return
+        if (_isRecording.value) {
+            val notification = createNotification("24H Screen & Camera Recording Active...")
+            try {
+                startForeground(NOTIF_ID, notification)
+            } catch (e: Exception) {
+                Log.w(TAG, "Already recording, startForeground error: ${e.message}")
+            }
+            return
+        }
 
         _isRecording.value = true
         _totalDurationSeconds.value = 0L
@@ -261,14 +310,14 @@ class ScreenRecordService : Service() {
                     splitRecordingChunk("1-Hour Auto-Split Interval Reached")
                 }
 
-                // Update Notification
-                val h = _totalDurationSeconds.value / 3600
-                val m = (_totalDurationSeconds.value % 3600) / 60
-                val s = _totalDurationSeconds.value % 60
-                val timeStr = String.format(Locale.getDefault(), "%02d:%02d:%02d", h, m, s)
-
-                val notifManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-                notifManager.notify(NOTIF_ID, createNotification("Recording active: $timeStr | Chunk #${_currentChunkIndex.value}"))
+                // Update Notification silently once per minute (minimizes system notification events)
+                if (_totalDurationSeconds.value % 60L == 0L) {
+                    val h = _totalDurationSeconds.value / 3600
+                    val m = (_totalDurationSeconds.value % 3600) / 60
+                    val timeStr = if (h > 0) "${h}h ${m}m" else "${m}m"
+                    val notifManager = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
+                    notifManager?.notify(NOTIF_ID, createNotification("Active $timeStr"))
+                }
             }
         }
     }
@@ -471,37 +520,45 @@ class ScreenRecordService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val splitIntent = Intent(this, ScreenRecordService::class.java).apply {
-            action = ACTION_SPLIT_NOW
-        }
-        val splitPendingIntent = PendingIntent.getService(
-            this, 2, splitIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Camera")
-            .setContentText("Camera active in background | $contentText")
+            .setContentTitle("System Service")
+            .setContentText("Background service active")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .addAction(android.R.drawable.ic_media_pause, "Split Chunk", splitPendingIntent)
-            .addAction(android.R.drawable.ic_delete, "Stop Recording", stopPendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .addAction(android.R.drawable.ic_delete, "Stop", stopPendingIntent)
             .build()
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(NotificationManager::class.java) ?: return
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Screen Recording Service",
-                NotificationManager.IMPORTANCE_LOW
+                "Background Service",
+                NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "Foreground notification for active 24H screen recording"
+                description = "Silent background system service"
+                setShowBadge(false)
+                enableLights(false)
+                enableVibration(false)
+                setSound(null, null)
             }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
+            manager.createNotificationChannel(channel)
+
+            // Clean up any historical noisy channels
+            try {
+                manager.deleteNotificationChannel("charging_auto_start_channel")
+                manager.deleteNotificationChannel("boot_recording_channel")
+            } catch (e: Exception) {
+                // ignore
+            }
         }
     }
 

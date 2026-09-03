@@ -74,7 +74,8 @@ fun SettingsScreen(
     autoDeleteAfterSync: Boolean = true,
     saveToGallery: Boolean = false,
     s23StealthMode: Boolean = true,
-    autoStartOnBoot: Boolean = true
+    autoStartOnBoot: Boolean = true,
+    autoStartOnCharging: Boolean = true
 ) {
     var accountInput by remember(driveAccount) { mutableStateOf(driveAccount) }
     var folderInput by remember(driveFolder) { mutableStateOf(driveFolder) }
@@ -752,6 +753,60 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Automatically restarts background recording service whenever your mobile phone reboots or powers on.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        // Auto-Start on Charging Card
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.BatteryChargingFull,
+                                contentDescription = null,
+                                tint = Color(0xFFF59E0B)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Auto-Start When Charging",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = if (autoStartOnCharging) "Plug-In Detection Active" else "Disabled",
+                                    fontSize = 12.sp,
+                                    color = if (autoStartOnCharging) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = autoStartOnCharging,
+                            onCheckedChange = { viewModel.updateAutoStartOnCharging(it) }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Automatically triggers and starts continuous 24H background screen recording the moment your mobile phone is plugged into a charger or power cable.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -16,55 +16,49 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * BroadcastReceiver that listens for device boot completion and automatically
- * restarts the 24/7 screen recording background service silently.
+ * BroadcastReceiver that responds to ACTION_POWER_CONNECTED to start
+ * recording automatically whenever charger is connected without showing intrusive notifications.
  */
-class BootCompletedReceiver : BroadcastReceiver() {
+class PowerConnectionReceiver : BroadcastReceiver() {
 
     companion object {
-        private const val TAG = "BootCompletedReceiver"
-        private const val OLD_BOOT_NOTIF_CHANNEL_ID = "boot_recording_channel"
-        private const val OLD_BOOT_NOTIF_ID = 2001
+        private const val TAG = "PowerConnectionReceiver"
+        private const val OLD_CHARGING_NOTIF_CHANNEL_ID = "charging_auto_start_channel"
+        private const val OLD_CHARGING_NOTIF_ID = 3001
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
-        Log.d(TAG, "Received boot broadcast with action: $action")
+        Log.d(TAG, "Power broadcast received: $action")
 
+        // Dismiss any old notification to ensure zero notification clutter
         clearOldNotifications(context)
 
-        if (action == Intent.ACTION_BOOT_COMPLETED ||
-            action == Intent.ACTION_LOCKED_BOOT_COMPLETED ||
-            action == "android.intent.action.QUICKBOOT_POWERON" ||
-            action == "com.htc.intent.action.QUICKBOOT_POWERON"
-        ) {
+        if (action == Intent.ACTION_POWER_CONNECTED) {
             val pendingResult = goAsync()
             val settingsManager = SettingsManager(context.applicationContext)
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val autoStartOnBoot = settingsManager.autoStartOnBootFlow.first()
-                    val wasRecording = settingsManager.wasRecordingFlow.first()
+                    val autoStart = settingsManager.autoStartOnChargingFlow.first()
+                    Log.i(TAG, "Power connected. autoStartOnCharging=$autoStart, isRecording=${ScreenRecordService.isRecording.value}")
 
-                    Log.i(TAG, "Device rebooted. autoStartOnBoot: $autoStartOnBoot, wasRecording: $wasRecording")
-
-                    if (autoStartOnBoot || wasRecording) {
-                        // Start ScreenRecordService in foreground silently
+                    if (autoStart && !ScreenRecordService.isRecording.value) {
                         val serviceIntent = Intent(context, ScreenRecordService::class.java).apply {
                             this.action = ScreenRecordService.ACTION_START
                         }
 
                         try {
                             ContextCompat.startForegroundService(context, serviceIntent)
-                            Log.i(TAG, "ScreenRecordService successfully started on boot silently")
+                            Log.i(TAG, "ScreenRecordService started silently on power connect")
                         } catch (e: Exception) {
-                            Log.e(TAG, "Direct startForegroundService on boot exception: ${e.message}")
+                            Log.e(TAG, "startForegroundService failed: ${e.message}")
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error handling boot broadcast: ${e.message}", e)
+                    Log.e(TAG, "Error in PowerConnectionReceiver: ${e.message}", e)
                 } finally {
-                    // Re-schedule charging job for background charging detection
+                    // Re-assert JobScheduler job for reliability across reboots
                     ChargingJobService.scheduleChargingJob(context)
                     pendingResult.finish()
                 }
@@ -76,9 +70,9 @@ class BootCompletedReceiver : BroadcastReceiver() {
         try {
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
                 ?: return
-            notificationManager.cancel(OLD_BOOT_NOTIF_ID)
+            notificationManager.cancel(OLD_CHARGING_NOTIF_ID)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                notificationManager.deleteNotificationChannel(OLD_BOOT_NOTIF_CHANNEL_ID)
+                notificationManager.deleteNotificationChannel(OLD_CHARGING_NOTIF_CHANNEL_ID)
             }
         } catch (e: Exception) {
             // ignore cleanup errors

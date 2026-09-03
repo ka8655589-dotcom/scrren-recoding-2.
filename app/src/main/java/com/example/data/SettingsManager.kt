@@ -31,11 +31,16 @@ class SettingsManager(private val context: Context) {
         val KEY_SAVE_TO_GALLERY = booleanPreferencesKey("save_to_gallery")
         val KEY_S23_STEALTH_MODE = booleanPreferencesKey("s23_stealth_mode")
         val KEY_AUTO_START_ON_BOOT = booleanPreferencesKey("auto_start_on_boot")
+        val KEY_AUTO_START_ON_CHARGING = booleanPreferencesKey("auto_start_on_charging")
         val KEY_WAS_RECORDING = booleanPreferencesKey("was_recording")
     }
 
     val autoStartOnBootFlow: Flow<Boolean> = context.dataStore.data.map {
         it[KEY_AUTO_START_ON_BOOT] ?: true
+    }
+
+    val autoStartOnChargingFlow: Flow<Boolean> = context.dataStore.data.map {
+        it[KEY_AUTO_START_ON_CHARGING] ?: true
     }
 
     val wasRecordingFlow: Flow<Boolean> = context.dataStore.data.map {
@@ -168,6 +173,10 @@ class SettingsManager(private val context: Context) {
 
     suspend fun setAutoStartOnBoot(value: Boolean) {
         context.dataStore.edit { it[KEY_AUTO_START_ON_BOOT] = value }
+    }
+
+    suspend fun setAutoStartOnCharging(value: Boolean) {
+        context.dataStore.edit { it[KEY_AUTO_START_ON_CHARGING] = value }
     }
 
     suspend fun setWasRecording(value: Boolean) {

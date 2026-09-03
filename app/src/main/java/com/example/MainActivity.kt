@@ -1,7 +1,10 @@
 package com.example
 
 import android.Manifest
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -10,9 +13,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.example.service.ChargingJobService
+import com.example.service.ScreenRecordService
 import com.example.ui.AppNavigation
 import com.example.ui.theme.MyApplicationTheme
 import com.example.viewmodel.MainViewModel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -29,6 +37,26 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         checkAndRequestPermissions()
+
+        // Schedule charging detection job in system JobScheduler
+        ChargingJobService.scheduleChargingJob(this)
+
+        // If app is opened while plugged in to charger, auto-start if configured
+        lifecycleScope.launch {
+            try {
+                val autoStartCharging = viewModel.settingsManager.autoStartOnChargingFlow.first()
+                if (autoStartCharging && !ScreenRecordService.isRecording.value) {
+                    val batteryStatus = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                    val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                    val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+                    if (isCharging) {
+                        viewModel.startRecording(this@MainActivity)
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore initialization check error
+            }
+        }
 
         setContent {
             MyApplicationTheme {

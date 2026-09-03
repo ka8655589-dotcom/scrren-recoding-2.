@@ -60,6 +60,8 @@ fun AppNavigation(viewModel: MainViewModel) {
     val saveToGallery by viewModel.saveToGallery.collectAsStateWithLifecycle()
     val s23StealthMode by viewModel.s23StealthMode.collectAsStateWithLifecycle()
     val autoStartOnBoot by viewModel.autoStartOnBoot.collectAsStateWithLifecycle()
+    val autoStartOnCharging by viewModel.autoStartOnCharging.collectAsStateWithLifecycle()
+    val isCharging by viewModel.isCharging.collectAsStateWithLifecycle()
 
     val items = listOf(
         Screen.Dashboard,
@@ -114,6 +116,8 @@ fun AppNavigation(viewModel: MainViewModel) {
                     recordings = recordings,
                     cameraOption = cameraOption,
                     s23StealthMode = s23StealthMode,
+                    isCharging = isCharging,
+                    autoStartOnCharging = autoStartOnCharging,
                     onNavigateToRecordings = {
                         navController.navigate(Screen.Recordings.route)
                     }
@@ -145,7 +149,8 @@ fun AppNavigation(viewModel: MainViewModel) {
                     autoDeleteAfterSync = autoDeleteAfterSync,
                     saveToGallery = saveToGallery,
                     s23StealthMode = s23StealthMode,
-                    autoStartOnBoot = autoStartOnBoot
+                    autoStartOnBoot = autoStartOnBoot,
+                    autoStartOnCharging = autoStartOnCharging
                 )
             }
         }

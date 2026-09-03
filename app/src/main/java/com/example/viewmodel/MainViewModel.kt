@@ -3,8 +3,10 @@ package com.example.viewmodel
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment
 import android.os.PowerManager
@@ -16,6 +18,7 @@ import com.example.data.AppDatabase
 import com.example.data.RecordingEntity
 import com.example.data.SettingsManager
 import com.example.drive.GoogleDriveUploader
+import com.example.service.ChargingJobService
 import com.example.service.ScreenRecordService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -43,6 +46,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val totalDurationSeconds = ScreenRecordService.totalDurationSeconds
     val chunkDurationSeconds = ScreenRecordService.chunkDurationSeconds
     val currentBatteryLevel = ScreenRecordService.currentBatteryLevel
+    val isCharging = ScreenRecordService.isCharging
     val currentChunkIndex = ScreenRecordService.currentChunkIndex
     val activeTimeRangeTag = ScreenRecordService.activeTimeRangeTag
     val lastStopReason = ScreenRecordService.lastStopReason
@@ -63,6 +67,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val saveToGallery = settingsManager.saveToGalleryFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val s23StealthMode = settingsManager.s23StealthModeFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val autoStartOnBoot = settingsManager.autoStartOnBootFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val autoStartOnCharging = settingsManager.autoStartOnChargingFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     fun startRecording(context: Context) {
         try {
@@ -211,6 +216,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateAutoStartOnBoot(value: Boolean) {
         viewModelScope.launch { settingsManager.setAutoStartOnBoot(value) }
+    }
+
+    fun updateAutoStartOnCharging(value: Boolean) {
+        viewModelScope.launch {
+            settingsManager.setAutoStartOnCharging(value)
+            val app = getApplication<Application>()
+            if (value) {
+                ChargingJobService.scheduleChargingJob(app)
+                val batteryStatus = app.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                val isPlugged = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+                if (isPlugged && !ScreenRecordService.isRecording.value) {
+                    startRecording(app)
+                }
+            } else {
+                ChargingJobService.cancelChargingJob(app)
+            }
+        }
     }
 
     fun updateSaveToGallery(value: Boolean) {

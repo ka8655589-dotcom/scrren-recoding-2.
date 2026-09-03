@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryAlert
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryStd
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CloudDone
@@ -83,6 +84,8 @@ fun HomeScreen(
     cameraOption: String = "Front Camera",
     s23StealthMode: Boolean = true,
     batteryShieldEnabled: Boolean = false,
+    isCharging: Boolean = false,
+    autoStartOnCharging: Boolean = true,
     onNavigateToRecordings: () -> Unit
 ) {
     val context = LocalContext.current
@@ -298,19 +301,19 @@ fun HomeScreen(
             }
         }
 
-        // Low Battery Shield Protection Status Card
+        // Low Battery Shield Protection & Charging Status Card
         item {
             val isShieldActive = batteryShieldEnabled && batteryThreshold > 0
-            val isBatteryLow = isShieldActive && batteryLevel > 0 && batteryLevel <= batteryThreshold
+            val isBatteryLow = isShieldActive && !isCharging && batteryLevel > 0 && batteryLevel <= batteryThreshold
 
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isBatteryLow) Color(0xFFFEF2F2) else MaterialTheme.colorScheme.surface
+                    containerColor = if (isCharging) Color(0xFFF0FDF4) else if (isBatteryLow) Color(0xFFFEF2F2) else MaterialTheme.colorScheme.surface
                 ),
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
-                    if (isBatteryLow) Color(0xFFFCA5A5) else MaterialTheme.colorScheme.outlineVariant
+                    if (isCharging) Color(0xFF86EFAC) else if (isBatteryLow) Color(0xFFFCA5A5) else MaterialTheme.colorScheme.outlineVariant
                 ),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -325,12 +328,12 @@ fun HomeScreen(
                             .size(48.dp)
                             .clip(CircleShape)
                             .background(
-                                if (isBatteryLow) Color(0xFFEF4444) else Color(0xFF10B981)
+                                if (isCharging) Color(0xFF10B981) else if (isBatteryLow) Color(0xFFEF4444) else Color(0xFF3B82F6)
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (isBatteryLow) Icons.Default.BatteryAlert else Icons.Default.Shield,
+                            imageVector = if (isCharging) Icons.Default.BatteryChargingFull else if (isBatteryLow) Icons.Default.BatteryAlert else Icons.Default.Shield,
                             contentDescription = null,
                             tint = Color.White
                         )
@@ -345,19 +348,25 @@ fun HomeScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = "Battery Protection Shield",
+                                text = if (isCharging) "Power Connected (Charging)" else "Battery Protection Shield",
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = "$batteryLevel%",
+                                text = if (isCharging) "$batteryLevel% ⚡" else "$batteryLevel%",
                                 fontWeight = FontWeight.Bold,
-                                color = if (isBatteryLow) Color(0xFFDC2626) else Color(0xFF059669)
+                                color = if (isCharging) Color(0xFF059669) else if (isBatteryLow) Color(0xFFDC2626) else Color(0xFF0284C7)
                             )
                         }
 
                         Text(
-                            text = if (isShieldActive) "Auto-stops recording if battery falls below $batteryThreshold%" else "Shield Disabled • Continuous uninterrupted 24H recording",
+                            text = if (isCharging) {
+                                "Charger active • Unlimited 24H recording enabled without battery drain"
+                            } else if (isShieldActive) {
+                                "Auto-stops if battery falls below $batteryThreshold% • Auto-resumes when charger connected"
+                            } else {
+                                if (autoStartOnCharging) "Auto-starts recording automatically when charger is plugged in" else "Shield Disabled • Continuous uninterrupted recording"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -369,7 +378,7 @@ fun HomeScreen(
                                 .fillMaxWidth()
                                 .height(6.dp)
                                 .clip(RoundedCornerShape(3.dp)),
-                            color = if (isBatteryLow) Color(0xFFDC2626) else Color(0xFF10B981),
+                            color = if (isCharging) Color(0xFF10B981) else if (isBatteryLow) Color(0xFFDC2626) else Color(0xFF3B82F6),
                             trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
                     }
