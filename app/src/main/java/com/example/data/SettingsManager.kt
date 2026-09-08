@@ -33,6 +33,11 @@ class SettingsManager(private val context: Context) {
         val KEY_AUTO_START_ON_BOOT = booleanPreferencesKey("auto_start_on_boot")
         val KEY_AUTO_START_ON_CHARGING = booleanPreferencesKey("auto_start_on_charging")
         val KEY_WAS_RECORDING = booleanPreferencesKey("was_recording")
+        val KEY_SMART_SCREEN_TRIGGER = booleanPreferencesKey("smart_screen_trigger")
+    }
+
+    val smartScreenTriggerFlow: Flow<Boolean> = context.dataStore.data.map {
+        it[KEY_SMART_SCREEN_TRIGGER] ?: true
     }
 
     val autoStartOnBootFlow: Flow<Boolean> = context.dataStore.data.map {
@@ -181,5 +186,9 @@ class SettingsManager(private val context: Context) {
 
     suspend fun setWasRecording(value: Boolean) {
         context.dataStore.edit { it[KEY_WAS_RECORDING] = value }
+    }
+
+    suspend fun setSmartScreenTrigger(value: Boolean) {
+        context.dataStore.edit { it[KEY_SMART_SCREEN_TRIGGER] = value }
     }
 }

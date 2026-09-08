@@ -9,6 +9,7 @@ import android.graphics.Shader
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.os.Build
 import android.util.Log
@@ -25,6 +26,29 @@ import kotlin.math.sin
 object Mp4VideoGenerator {
 
     private const val TAG = "Mp4VideoGenerator"
+
+    /**
+     * Checks if a video file is completely written, uncorrupted, and playable by Android media framework.
+     */
+    fun isVideoFilePlayable(file: File): Boolean {
+        if (!file.exists() || file.length() < 1024L) return false
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            val hasVideo = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO)
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            hasVideo == "yes" || (duration != null && (duration.toLongOrNull() ?: 0L) > 0L)
+        } catch (e: Throwable) {
+            Log.w(TAG, "File ${file.name} failed playback integrity check: ${e.message}")
+            false
+        } finally {
+            try {
+                retriever.release()
+            } catch (e: Throwable) {
+                // ignore
+            }
+        }
+    }
 
     /**
      * Generates a fully compliant, playable H.264/MP4 video for a completed or split recording chunk.
@@ -53,6 +77,11 @@ object Mp4VideoGenerator {
             parent.mkdirs()
         }
 
+        // Ensure clean start to prevent corrupt partial file overwrite
+        if (outputFile.exists()) {
+            outputFile.delete()
+        }
+
         // Try Hardware/System MediaCodec + MediaMuxer encoding first
         val success = tryEncodeWithMediaCodec(
             outputFile = outputFile,
@@ -72,6 +101,9 @@ object Mp4VideoGenerator {
 
         // Fallback: Generate structured valid MP4 video container with actual media data
         Log.w(TAG, "MediaCodec fallback triggered, generating structured MP4 container")
+        if (outputFile.exists()) {
+            outputFile.delete()
+        }
         val fallbackBytes = generateFallbackMp4(
             durationSeconds = safeDuration,
             chunkIndex = chunkIndex,

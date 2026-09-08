@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Collections
@@ -246,12 +247,19 @@ fun RecordingsScreen(
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // Drive Upload Status Banner
+                            val isOffline = item.uploadStatus == "FAILED" && (
+                                item.errorMessage?.contains("No address associated with hostname") == true ||
+                                item.errorMessage?.contains("Unable to resolve host") == true ||
+                                item.errorMessage?.contains("No Internet") == true
+                            )
+
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = when (item.uploadStatus) {
-                                    "SUCCESS" -> Color(0xFFDCFCE7)
-                                    "UPLOADING" -> Color(0xFFE0F2FE)
-                                    "FAILED" -> Color(0xFFFEE2E2)
+                                color = when {
+                                    item.uploadStatus == "SUCCESS" -> Color(0xFFDCFCE7)
+                                    item.uploadStatus == "UPLOADING" -> Color(0xFFE0F2FE)
+                                    isOffline -> Color(0xFFFEF3C7)
+                                    item.uploadStatus == "FAILED" -> Color(0xFFFEE2E2)
                                     else -> Color(0xFFFEF3C7)
                                 },
                                 modifier = Modifier.fillMaxWidth()
@@ -264,36 +272,40 @@ fun RecordingsScreen(
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Icon(
-                                                imageVector = when (item.uploadStatus) {
-                                                    "SUCCESS" -> Icons.Default.CloudDone
-                                                    "UPLOADING" -> Icons.Default.CloudSync
-                                                    "FAILED" -> Icons.Default.Error
+                                                imageVector = when {
+                                                    item.uploadStatus == "SUCCESS" -> Icons.Default.CloudDone
+                                                    item.uploadStatus == "UPLOADING" -> Icons.Default.CloudSync
+                                                    isOffline -> Icons.Default.CloudOff
+                                                    item.uploadStatus == "FAILED" -> Icons.Default.Error
                                                     else -> Icons.Default.CloudUpload
                                                 },
                                                 contentDescription = null,
                                                 modifier = Modifier.size(16.dp),
-                                                tint = when (item.uploadStatus) {
-                                                    "SUCCESS" -> Color(0xFF166534)
-                                                    "UPLOADING" -> Color(0xFF0369A1)
-                                                    "FAILED" -> Color(0xFF991B1B)
+                                                tint = when {
+                                                    item.uploadStatus == "SUCCESS" -> Color(0xFF166534)
+                                                    item.uploadStatus == "UPLOADING" -> Color(0xFF0369A1)
+                                                    isOffline -> Color(0xFFB45309)
+                                                    item.uploadStatus == "FAILED" -> Color(0xFF991B1B)
                                                     else -> Color(0xFF92400E)
                                                 }
                                             )
                                             Spacer(modifier = Modifier.width(6.dp))
                                             val isLocalExists = File(item.filePath).exists()
                                             Text(
-                                                text = when (item.uploadStatus) {
-                                                    "SUCCESS" -> if (isLocalExists) "Synced to Google Drive (Local Saved)" else "Synced to Google Drive (Local auto-deleted to save memory)"
-                                                    "UPLOADING" -> "Uploading to Google Drive..."
-                                                    "FAILED" -> "Upload Failed: ${item.errorMessage ?: "Network issue"}"
+                                                text = when {
+                                                    item.uploadStatus == "SUCCESS" -> if (isLocalExists) "Synced to Google Drive (Local Saved)" else "Synced to Google Drive (Local auto-deleted to save memory)"
+                                                    item.uploadStatus == "UPLOADING" -> "Uploading to Google Drive..."
+                                                    isOffline -> "Offline: Connect to Wi-Fi or Data, then tap Sync"
+                                                    item.uploadStatus == "FAILED" -> "Upload Failed: ${item.errorMessage ?: "Network issue"}"
                                                     else -> "Pending Google Drive Upload"
                                                 },
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = when (item.uploadStatus) {
-                                                    "SUCCESS" -> Color(0xFF166534)
-                                                    "UPLOADING" -> Color(0xFF0369A1)
-                                                    "FAILED" -> Color(0xFF991B1B)
+                                                color = when {
+                                                    item.uploadStatus == "SUCCESS" -> Color(0xFF166534)
+                                                    item.uploadStatus == "UPLOADING" -> Color(0xFF0369A1)
+                                                    isOffline -> Color(0xFFB45309)
+                                                    item.uploadStatus == "FAILED" -> Color(0xFF991B1B)
                                                     else -> Color(0xFF92400E)
                                                 }
                                             )

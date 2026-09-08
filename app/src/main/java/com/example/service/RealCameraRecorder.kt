@@ -40,6 +40,7 @@ class RealCameraRecorder(private val context: Context) {
     private var backgroundHandler: Handler? = null
 
     private var isRecordingRealCamera = false
+    private var isStopRequested = false
     private var currentFile: File? = null
     private var previewSurface: Surface? = null
     private var currentCameraId: String? = null
@@ -111,6 +112,7 @@ class RealCameraRecorder(private val context: Context) {
             return
         }
 
+        isStopRequested = false
         startBackgroundThread()
         currentFile = outputFile
 
@@ -132,6 +134,10 @@ class RealCameraRecorder(private val context: Context) {
         try {
             cameraManager.openCamera(selectedId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
+                    if (isStopRequested) {
+                        try { camera.close() } catch (e: Exception) {}
+                        return
+                    }
                     cameraDevice = camera
                     startCaptureSession(onSuccess, onError)
                 }
@@ -260,6 +266,10 @@ class RealCameraRecorder(private val context: Context) {
 
             camera.createCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
+                    if (isStopRequested || cameraDevice == null || mediaRecorder == null) {
+                        try { session.close() } catch (e: Exception) {}
+                        return
+                    }
                     captureSession = session
                     try {
                         val requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
@@ -295,14 +305,20 @@ class RealCameraRecorder(private val context: Context) {
     }
 
     fun stopRecording(): Boolean {
+        isStopRequested = true
         var stoppedSuccessfully = false
         try {
             if (isRecordingRealCamera && mediaRecorder != null) {
-                mediaRecorder?.stop()
-                stoppedSuccessfully = true
+                try {
+                    mediaRecorder?.stop()
+                    stoppedSuccessfully = true
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Notice stopping mediaRecorder (short clip or rapid stop): ${e.message}")
+                    stoppedSuccessfully = false
+                }
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "Notice stopping mediaRecorder: ${e.message}")
+            Log.w(TAG, "Notice in stopRecording: ${e.message}")
         }
 
         try {

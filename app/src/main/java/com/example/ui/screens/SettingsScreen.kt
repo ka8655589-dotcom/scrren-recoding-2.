@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,7 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryAlert
 import androidx.compose.material.icons.filled.BatteryChargingFull
@@ -22,7 +26,11 @@ import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
+import android.widget.Toast
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Schedule
@@ -50,11 +58,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.viewmodel.MainViewModel
+import com.example.drive.ServiceAccountAuth
+import org.json.JSONObject
 
 @Composable
 fun SettingsScreen(
@@ -75,7 +88,8 @@ fun SettingsScreen(
     saveToGallery: Boolean = false,
     s23StealthMode: Boolean = true,
     autoStartOnBoot: Boolean = true,
-    autoStartOnCharging: Boolean = true
+    autoStartOnCharging: Boolean = true,
+    smartScreenTrigger: Boolean = true
 ) {
     var accountInput by remember(driveAccount) { mutableStateOf(driveAccount) }
     var folderInput by remember(driveFolder) { mutableStateOf(driveFolder) }
@@ -83,6 +97,17 @@ fun SettingsScreen(
     var jsonInput by remember(serviceAccountJson) { mutableStateOf(serviceAccountJson) }
     var testStatusMessage by remember { mutableStateOf<String?>(null) }
     var isTestingDrive by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
+
+    val parsedClientEmail = remember(jsonInput) {
+        ServiceAccountAuth.extractClientEmail(jsonInput)
+    }
+
+    val parsedProjectId = remember(jsonInput) {
+        ServiceAccountAuth.extractProjectId(jsonInput)
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -218,6 +243,83 @@ fun SettingsScreen(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // Double Button & Smart Screen Trigger (Battery Saver Mode)
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (smartScreenTrigger) Color(0xFF0F172A) else MaterialTheme.colorScheme.surfaceVariant
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (smartScreenTrigger) Color(0xFF38BDF8) else MaterialTheme.colorScheme.outlineVariant
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(if (smartScreenTrigger) Color(0xFF0284C7) else Color.Gray.copy(alpha = 0.3f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PowerSettingsNew,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Screen On/Off Auto Loop",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (smartScreenTrigger) Color.White else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (smartScreenTrigger) "Battery Saver • Auto Record on Screen ON / Save on Screen OFF" else "Standard Background Mode",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (smartScreenTrigger) Color(0xFF38BDF8) else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = smartScreenTrigger,
+                            onCheckedChange = { enabled ->
+                                viewModel.updateSmartScreenTrigger(enabled)
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = if (smartScreenTrigger) {
+                            "▶️ Screen ON: Video starts recording automatically with tactile vibration.\n\n🔒 Screen OFF: Video immediately closes and saves to clips & Google Drive, and camera hardware stops to prevent battery drain.\n\n🔄 Continuous Cycle: When screen turns ON again, recording starts again automatically; when screen turns OFF, it saves automatically!\n\n🔘 Samsung S23 Tip: Double press side button or double tap screen wakes phone and starts recording instantly!"
+                        } else {
+                            "Disabled: Recording keeps camera and CPU running even when screen is locked (high battery consumption)."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (smartScreenTrigger) Color(0xFFCBD5E1) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -512,6 +614,116 @@ fun SettingsScreen(
                             )
                         }
                     )
+
+                    if (parsedClientEmail.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = null,
+                                        tint = Color(0xFF3B82F6),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Folder Sharing & Setup Instructions",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Text(
+                                    text = "Service Account Email (Share destination):",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = parsedClientEmail,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        OutlinedButton(
+                                            onClick = {
+                                                clipboardManager.setText(AnnotatedString(parsedClientEmail))
+                                                Toast.makeText(context, "Service Account email copied!", Toast.LENGTH_SHORT).show()
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.height(32.dp)
+                                        ) {
+                                            Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Copy", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Text(
+                                    text = "How to solve 'Could not verify/create folder':",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                val displayAccount = if (accountInput.isBlank()) "ka8655588@gmail.com" else accountInput
+                                val displayFolder = if (folderInput.isBlank()) "Screen_Recordings_24H" else folderInput
+                                val displayProjId = if (parsedProjectId.isBlank()) "screen-recording-505611" else parsedProjectId
+
+                                Text(
+                                    text = "1. Open Google Drive (drive.google.com) on account '$displayAccount'.\n" +
+                                           "2. Create a folder named '$displayFolder'.\n" +
+                                           "3. Right-click folder -> Share -> paste the email above.\n" +
+                                           "4. Set permission to 'Editor' -> click Send.\n" +
+                                           "5. Ensure Google Drive API is enabled in Google Cloud Console.",
+                                    fontSize = 11.sp,
+                                    lineHeight = 17.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        try {
+                                            uriHandler.openUri("https://console.cloud.google.com/apis/library/drive.googleapis.com?project=$displayProjId")
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Enable Drive API in Google Cloud Console", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
 

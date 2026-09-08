@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Stop
@@ -48,6 +49,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -86,6 +88,9 @@ fun HomeScreen(
     batteryShieldEnabled: Boolean = false,
     isCharging: Boolean = false,
     autoStartOnCharging: Boolean = true,
+    isScreenStandby: Boolean = false,
+    smartScreenTrigger: Boolean = true,
+    doubleButtonTriggerCount: Int = 0,
     onNavigateToRecordings: () -> Unit
 ) {
     val context = LocalContext.current
@@ -168,21 +173,21 @@ fun HomeScreen(
 
                 Surface(
                     shape = RoundedCornerShape(20.dp),
-                    color = if (isRecording) Color(0xFFE53935) else MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (isRecording) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isRecording) Color(0xFFE53935) else if (isScreenStandby) Color(0xFF0284C7) else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (isRecording || isScreenStandby) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.FiberManualRecord,
+                            imageVector = if (isScreenStandby) Icons.Default.PowerSettingsNew else Icons.Default.FiberManualRecord,
                             contentDescription = null,
                             modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isRecording) "REC LIVE" else "IDLE",
+                            text = if (isRecording) "REC LIVE" else if (isScreenStandby) "STANDBY (SCREEN OFF)" else "IDLE",
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp
                         )
@@ -207,7 +212,7 @@ fun HomeScreen(
             Card(
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isRecording) Color(0xFF1E293B) else MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = if (isRecording) Color(0xFF1E293B) else if (isScreenStandby) Color(0xFF0F172A) else MaterialTheme.colorScheme.surfaceVariant
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -226,10 +231,10 @@ fun HomeScreen(
                             .scale(if (isRecording) pulseScale else 1f)
                             .clip(CircleShape)
                             .background(
-                                if (isRecording) Color(0xFFDC2626) else MaterialTheme.colorScheme.primary
+                                if (isRecording) Color(0xFFDC2626) else if (isScreenStandby) Color(0xFF0284C7) else MaterialTheme.colorScheme.primary
                             )
                             .clickable {
-                                if (isRecording) {
+                                if (isRecording || isScreenStandby) {
                                     viewModel.stopRecording(context)
                                 } else {
                                     viewModel.startRecording(context)
@@ -247,16 +252,23 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = if (isRecording) formatTime(totalDuration) else "00:00:00",
+                        text = if (isRecording || isScreenStandby) formatTime(totalDuration) else "00:00:00",
                         style = MaterialTheme.typography.displayMedium,
                         fontWeight = FontWeight.Bold,
-                        color = if (isRecording) Color.White else MaterialTheme.colorScheme.onSurface
+                        color = if (isRecording || isScreenStandby) Color.White else MaterialTheme.colorScheme.onSurface
                     )
 
                     Text(
-                        text = if (isRecording) "Continuous 24H Session Running" else "Tap red button to start 24H recording",
+                        text = if (isRecording) {
+                            "Continuous Session Running • Active"
+                        } else if (isScreenStandby) {
+                            "Screen Off Standby • Video saved to protect battery\nPress side power button or tap to resume"
+                        } else {
+                            "Tap button or press side power button to record"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (isRecording) Color(0xFF94A3B8) else MaterialTheme.colorScheme.onSurfaceVariant
+                        textAlign = TextAlign.Center,
+                        color = if (isRecording) Color(0xFF94A3B8) else if (isScreenStandby) Color(0xFF38BDF8) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     if (isRecording) {
@@ -295,6 +307,100 @@ fun HomeScreen(
                                     Text("Split Now", fontSize = 12.sp)
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Double Button & Smart Screen Trigger (Battery Saver Card)
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (smartScreenTrigger) Color(0xFF0F172A) else MaterialTheme.colorScheme.surfaceVariant
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (smartScreenTrigger) Color(0xFF38BDF8) else MaterialTheme.colorScheme.outlineVariant
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(if (smartScreenTrigger) Color(0xFF0284C7) else Color.Gray.copy(alpha = 0.3f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PowerSettingsNew,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Screen On/Off Auto Loop",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (smartScreenTrigger) Color.White else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (smartScreenTrigger) "Active • Auto Record on Screen ON / Save on Screen OFF" else "Manual Control Only",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (smartScreenTrigger) Color(0xFF38BDF8) else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = smartScreenTrigger,
+                            onCheckedChange = { enabled ->
+                                viewModel.updateSmartScreenTrigger(enabled)
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = if (smartScreenTrigger) {
+                            "▶️ Screen ON: Video starts recording automatically with tactile vibration.\n\n🔒 Screen OFF: Video immediately closes and saves to clips & Google Drive, and camera hardware stops to prevent battery drain.\n\n🔄 Continuous Cycle: When screen turns ON again, recording starts again automatically; when screen turns OFF, it saves automatically!\n\n🔘 Double-press power or side button or double-tap screen to wake & start instantly."
+                        } else {
+                            "Disabled: Recording continues uninterrupted with screen off (higher battery consumption)."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (smartScreenTrigger) Color(0xFFCBD5E1) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (smartScreenTrigger && doubleButtonTriggerCount > 0) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF0284C7).copy(alpha = 0.2f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8))
+                        ) {
+                            Text(
+                                text = "🎯 Double Button Trigger activated $doubleButtonTriggerCount time(s)",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF38BDF8)
+                            )
                         }
                     }
                 }

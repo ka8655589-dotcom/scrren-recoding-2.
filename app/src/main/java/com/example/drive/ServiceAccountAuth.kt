@@ -23,7 +23,42 @@ object ServiceAccountAuth {
 
     // In-memory cache for the token
     private var cachedToken: String? = null
+    private var cachedJsonHash: Int = 0
     private var tokenExpiryTimeMs: Long = 0
+
+    fun clearCache() {
+        cachedToken = null
+        cachedJsonHash = 0
+        tokenExpiryTimeMs = 0
+    }
+
+    fun extractClientEmail(serviceAccountJson: String): String {
+        val trimmed = serviceAccountJson.trim()
+        if (trimmed.isEmpty()) return ""
+        try {
+            val json = JSONObject(trimmed)
+            val email = json.optString("client_email", "").trim()
+            if (email.isNotEmpty()) return email
+        } catch (e: Exception) {
+            // fallback to regex
+        }
+        val regex = Regex("\"client_email\"\\s*:\\s*\"([^\"]+)\"")
+        return regex.find(trimmed)?.groupValues?.get(1)?.trim() ?: ""
+    }
+
+    fun extractProjectId(serviceAccountJson: String): String {
+        val trimmed = serviceAccountJson.trim()
+        if (trimmed.isEmpty()) return ""
+        try {
+            val json = JSONObject(trimmed)
+            val proj = json.optString("project_id", "").trim()
+            if (proj.isNotEmpty()) return proj
+        } catch (e: Exception) {
+            // fallback to regex
+        }
+        val regex = Regex("\"project_id\"\\s*:\\s*\"([^\"]+)\"")
+        return regex.find(trimmed)?.groupValues?.get(1)?.trim() ?: ""
+    }
 
     /**
      * Obtains an active OAuth access token using Service Account credentials.
@@ -35,15 +70,25 @@ object ServiceAccountAuth {
             return Pair(null, "Service Account JSON is empty")
         }
 
-        // Return cached token if valid for at least 5 more minutes
-        if (!cachedToken.isNullOrBlank() && System.currentTimeMillis() < tokenExpiryTimeMs - 300_000) {
+        val jsonHash = trimmedJson.hashCode()
+        // Return cached token only if the same key was used and is valid for at least 5 more minutes
+        if (!cachedToken.isNullOrBlank() && cachedJsonHash == jsonHash && System.currentTimeMillis() < tokenExpiryTimeMs - 300_000) {
             return Pair(cachedToken, null)
         }
 
         return try {
-            val json = JSONObject(trimmedJson)
-            val clientEmail = json.optString("client_email", "")
-            val privateKeyRaw = json.optString("private_key", "")
+            var clientEmail = extractClientEmail(trimmedJson)
+            var privateKeyRaw = ""
+
+            try {
+                val json = JSONObject(trimmedJson)
+                if (clientEmail.isBlank()) clientEmail = json.optString("client_email", "")
+                privateKeyRaw = json.optString("private_key", "")
+            } catch (e: Exception) {
+                // Regex fallback for private_key if JSON parser stumbled on raw newlines
+                val pkRegex = Regex("\"private_key\"\\s*:\\s*\"([\\s\\S]*?)\"\\s*,")
+                privateKeyRaw = pkRegex.find(trimmedJson)?.groupValues?.get(1) ?: ""
+            }
 
             if (clientEmail.isBlank() || privateKeyRaw.isBlank()) {
                 return Pair(null, "Invalid JSON: missing 'client_email' or 'private_key'")
@@ -69,6 +114,7 @@ object ServiceAccountAuth {
                 val expiresInSec = respJson.optLong("expires_in", 3600)
 
                 cachedToken = token
+                cachedJsonHash = jsonHash
                 tokenExpiryTimeMs = System.currentTimeMillis() + (expiresInSec * 1000)
                 Log.i(TAG, "Successfully exchanged Service Account JWT for Google Access Token!")
                 Pair(token, null)
@@ -79,7 +125,17 @@ object ServiceAccountAuth {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error authenticating Service Account: ${e.message}", e)
-            Pair(null, e.localizedMessage ?: "Unknown authentication error")
+            val isNoInternet = e is java.net.UnknownHostException || 
+                e.message?.contains("Unable to resolve host") == true ||
+                e.message?.contains("No address associated with hostname") == true
+            val friendlyMsg = if (isNoInternet) {
+                "No Internet Connection: Your phone is offline. Please turn on Wi-Fi or Mobile Data to connect to Google Drive."
+            } else if (e is java.net.SocketTimeoutException) {
+                "Connection Timed Out: Google servers took too long to respond. Please check your internet connection."
+            } else {
+                e.localizedMessage ?: "Unknown authentication error"
+            }
+            Pair(null, friendlyMsg)
         }
     }
 

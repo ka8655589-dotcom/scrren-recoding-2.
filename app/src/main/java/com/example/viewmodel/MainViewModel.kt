@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -23,6 +24,7 @@ import com.example.service.ScreenRecordService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -43,6 +45,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
 
     val isRecording = ScreenRecordService.isRecording
+    val isScreenStandby = ScreenRecordService.isScreenStandby
+    val doubleButtonTriggerCount = ScreenRecordService.doubleButtonTriggerCount
     val totalDurationSeconds = ScreenRecordService.totalDurationSeconds
     val chunkDurationSeconds = ScreenRecordService.chunkDurationSeconds
     val currentBatteryLevel = ScreenRecordService.currentBatteryLevel
@@ -51,6 +55,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val activeTimeRangeTag = ScreenRecordService.activeTimeRangeTag
     val lastStopReason = ScreenRecordService.lastStopReason
 
+    val smartScreenTrigger = settingsManager.smartScreenTriggerFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val batteryShieldEnabled = settingsManager.batteryShieldEnabledFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val batteryThreshold = settingsManager.batteryThresholdFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val splitDurationMins = settingsManager.splitDurationMinsFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 60)
@@ -242,6 +247,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateS23StealthMode(value: Boolean) {
         viewModelScope.launch { settingsManager.setS23StealthMode(value) }
+    }
+
+    fun updateSmartScreenTrigger(value: Boolean) {
+        viewModelScope.launch {
+            settingsManager.setSmartScreenTrigger(value)
+            val app = getApplication<Application>()
+            if (value && !ScreenRecordService.isRecording.value) {
+                try {
+                    val intent = Intent(app, ScreenRecordService::class.java).apply {
+                        action = ScreenRecordService.ACTION_INIT_STANDBY
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        app.startForegroundService(intent)
+                    } else {
+                        app.startService(intent)
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainViewModel", "Failed to start standby service: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun ensureScreenTriggerServiceRunning(context: Context) {
+        viewModelScope.launch {
+            val smartTrigger = settingsManager.smartScreenTriggerFlow.first()
+            if (smartTrigger && !ScreenRecordService.isRecording.value && !ScreenRecordService.isScreenStandby.value) {
+                try {
+                    val intent = Intent(context, ScreenRecordService::class.java).apply {
+                        action = ScreenRecordService.ACTION_INIT_STANDBY
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(intent)
+                    } else {
+                        context.startService(intent)
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainViewModel", "Failed to start standby service: ${e.message}")
+                }
+            }
+        }
     }
 
     fun openVideoInExternalPlayer(context: Context, recording: RecordingEntity) {

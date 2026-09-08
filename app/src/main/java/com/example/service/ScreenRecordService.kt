@@ -17,6 +17,9 @@ import android.os.Build
 import android.os.Environment
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
@@ -48,10 +51,17 @@ class ScreenRecordService : Service() {
         const val ACTION_START = "com.example.action.START_RECORDING"
         const val ACTION_STOP = "com.example.action.STOP_RECORDING"
         const val ACTION_SPLIT_NOW = "com.example.action.SPLIT_NOW"
+        const val ACTION_INIT_STANDBY = "com.example.action.INIT_STANDBY"
 
         // Live Shared StateFlows
         private val _isRecording = MutableStateFlow(false)
         val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
+
+        private val _isScreenStandby = MutableStateFlow(false)
+        val isScreenStandby: StateFlow<Boolean> = _isScreenStandby.asStateFlow()
+
+        private val _doubleButtonTriggerCount = MutableStateFlow(0)
+        val doubleButtonTriggerCount: StateFlow<Int> = _doubleButtonTriggerCount.asStateFlow()
 
         private val _totalDurationSeconds = MutableStateFlow(0L)
         val totalDurationSeconds: StateFlow<Long> = _totalDurationSeconds.asStateFlow()
@@ -87,12 +97,31 @@ class ScreenRecordService : Service() {
     private var currentVideoFile: File? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var realCameraRecorder: RealCameraRecorder? = null
+    private var lastScreenOffTime: Long = 0L
+    private var lastScreenOnTime: Long = 0L
+    private var smartScreenTriggerEnabled: Boolean = true
 
-    // Battery and Power Receiver
-    private val batteryReceiver = object : BroadcastReceiver() {
+    // System Events, Screen State, Battery and Power Receiver
+    private val systemEventsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             intent?.let {
                 val action = it.action
+                if (action == Intent.ACTION_SCREEN_OFF) {
+                    Log.i(TAG, "Screen turned OFF (ACTION_SCREEN_OFF)")
+                    handleScreenOff()
+                    return
+                } else if (action == Intent.ACTION_SCREEN_ON) {
+                    Log.i(TAG, "Screen turned ON (ACTION_SCREEN_ON)")
+                    handleScreenOn()
+                    return
+                } else if (action == Intent.ACTION_USER_PRESENT) {
+                    Log.i(TAG, "User unlocked device (ACTION_USER_PRESENT)")
+                    if (!_isRecording.value && smartScreenTriggerEnabled) {
+                        handleScreenOn()
+                    }
+                    return
+                }
+
                 if (action == Intent.ACTION_POWER_CONNECTED) {
                     _isCharging.value = true
                     Log.i(TAG, "Charger plugged in (ACTION_POWER_CONNECTED)")
@@ -125,6 +154,87 @@ class ScreenRecordService : Service() {
         }
     }
 
+    private fun handleScreenOff() {
+        lastScreenOffTime = System.currentTimeMillis()
+        if (smartScreenTriggerEnabled && _isRecording.value) {
+            Log.i(TAG, "Screen OFF -> Auto-closing video, saving clip to storage/Drive, and putting camera into zero-battery standby")
+            pauseForScreenOff("Screen turned OFF (Video saved automatically)")
+        }
+    }
+
+    private fun pauseForScreenOff(reason: String) {
+        if (!_isRecording.value) return
+
+        _isRecording.value = false
+        _isScreenStandby.value = true
+        timerJob?.cancel()
+        _lastStopReason.value = reason
+
+        // Stop real hardware camera immediately so camera sensor powers down
+        realCameraRecorder?.stopRecording()
+        realCameraRecorder = null
+
+        // Finalize current chunk, save to DB and trigger Drive upload
+        finalizeCurrentChunkAndSave()
+
+        // Release WakeLock so the device CPU can enter deep sleep and stop battery drain!
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing wake lock on screen off: ${e.message}")
+        }
+
+        // Update notification to inform user recording is safely saved in zero-battery standby
+        val notifManager = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
+        notifManager?.notify(NOTIF_ID, createNotification("Screen Off • Video saved automatically. Resumes on screen ON."))
+    }
+
+    private fun handleScreenOn() {
+        val now = System.currentTimeMillis()
+        val timeSinceScreenOff = now - lastScreenOffTime
+        val isRapidDoubleClick = timeSinceScreenOff in 40..2500
+        lastScreenOnTime = now
+
+        if (smartScreenTriggerEnabled) {
+            if (!_isRecording.value) {
+                if (isRapidDoubleClick) {
+                    _doubleButtonTriggerCount.value += 1
+                    Log.i(TAG, "Double Button Press detected! Screen turned ON within ${timeSinceScreenOff}ms -> starting recording instantly...")
+                } else {
+                    Log.i(TAG, "Screen turned ON (side button / wake) -> starting video recording automatically...")
+                }
+                startScreenRecording()
+                vibrateBriefly()
+            } else if (isRapidDoubleClick) {
+                // Double-clicking while already recording triggers split and creates fresh chunk
+                Log.i(TAG, "Double Button Press while recording: Splitting current chunk now...")
+                splitRecordingChunk("Double button press quick split")
+                vibrateBriefly()
+            }
+        }
+    }
+
+    private fun vibrateBriefly() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vibratorManager?.defaultVibrator?.vibrate(
+                    VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                vibrator?.vibrate(
+                    VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE)
+                )
+            }
+        } catch (e: Exception) {
+            // Ignore on devices without vibrator motor
+        }
+    }
+
     private fun checkAndAutoStartOnCharging() {
         if (!_isRecording.value) {
             serviceScope.launch {
@@ -149,14 +259,25 @@ class ScreenRecordService : Service() {
                 addAction(Intent.ACTION_BATTERY_CHANGED)
                 addAction(Intent.ACTION_POWER_CONNECTED)
                 addAction(Intent.ACTION_POWER_DISCONNECTED)
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
             }
-            registerReceiver(batteryReceiver, filter)
+            registerReceiver(systemEventsReceiver, filter)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to register battery receiver: ${e.message}")
+            Log.e(TAG, "Failed to register system events receiver: ${e.message}")
         }
 
         // Ensure charging job is scheduled in OS JobScheduler
         ChargingJobService.scheduleChargingJob(this)
+
+        // Keep smartScreenTriggerEnabled in sync
+        serviceScope.launch {
+            settingsManager.smartScreenTriggerFlow.collect { enabled ->
+                smartScreenTriggerEnabled = enabled
+                Log.d(TAG, "Smart screen trigger updated: $enabled")
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -164,6 +285,17 @@ class ScreenRecordService : Service() {
             ACTION_START -> startScreenRecording()
             ACTION_STOP -> stopScreenRecording("Stopped manually by user")
             ACTION_SPLIT_NOW -> splitRecordingChunk("Manual split triggered by user")
+            ACTION_INIT_STANDBY -> {
+                if (!_isRecording.value) {
+                    _isScreenStandby.value = true
+                    val notification = createNotification("Screen Trigger Ready • Auto-records when screen turns on")
+                    try {
+                        startForeground(NOTIF_ID, notification)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Standby startForeground failed: ${e.message}")
+                    }
+                }
+            }
         }
         return START_STICKY
     }
@@ -179,14 +311,22 @@ class ScreenRecordService : Service() {
             return
         }
 
+        val wasInStandby = _isScreenStandby.value
         _isRecording.value = true
-        _totalDurationSeconds.value = 0L
-        _chunkDurationSeconds.value = 0L
-        _currentChunkIndex.value = 1
+        _isScreenStandby.value = false
         _lastStopReason.value = null
 
-        totalStartTimeMillis = System.currentTimeMillis()
-        chunkStartTimeMillis = totalStartTimeMillis
+        if (wasInStandby) {
+            _currentChunkIndex.value += 1
+            _chunkDurationSeconds.value = 0L
+            chunkStartTimeMillis = System.currentTimeMillis()
+        } else {
+            _totalDurationSeconds.value = 0L
+            _chunkDurationSeconds.value = 0L
+            _currentChunkIndex.value = 1
+            totalStartTimeMillis = System.currentTimeMillis()
+            chunkStartTimeMillis = totalStartTimeMillis
+        }
 
         serviceScope.launch {
             settingsManager.setWasRecording(true)
@@ -196,9 +336,11 @@ class ScreenRecordService : Service() {
 
         // Start hardware camera recording
         serviceScope.launch {
+            if (!_isRecording.value) return@launch
             val cameraOpt = settingsManager.cameraOptionFlow.first()
             val resolution = settingsManager.videoResolutionFlow.first()
             val recordAudio = settingsManager.recordAudioFlow.first()
+            if (!_isRecording.value) return@launch
             currentVideoFile?.let { file ->
                 val recorder = RealCameraRecorder(this@ScreenRecordService)
                 realCameraRecorder = recorder
@@ -322,15 +464,12 @@ class ScreenRecordService : Service() {
         }
     }
 
-    private fun splitRecordingChunk(reason: String) {
-        val file = currentVideoFile
+    private fun finalizeCurrentChunkAndSave() {
+        val file = currentVideoFile ?: return
+        currentVideoFile = null // Clear immediately to prevent duplicate finalization
         val duration = _chunkDurationSeconds.value
         val startTime = chunkStartTimeMillis
         val endTime = System.currentTimeMillis()
-
-        // Stop real camera recorder for current chunk
-        realCameraRecorder?.stopRecording()
-        realCameraRecorder = null
 
         val timeTagFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
         val startStr = timeTagFormat.format(Date(startTime))
@@ -338,17 +477,34 @@ class ScreenRecordService : Service() {
 
         val currentChunk = _currentChunkIndex.value
 
-        serviceScope.launch(Dispatchers.IO) {
-            val cameraOpt = settingsManager.cameraOptionFlow.first()
-            val resolution = settingsManager.videoResolutionFlow.first()
-            val recordAudio = settingsManager.recordAudioFlow.first()
-            val rangeTag = "$startStr - $endStr ($cameraOpt)"
+        // Acquire temporary wake lock to ensure CPU stays active while writing file & database entry
+        val tempWakeLock = (getSystemService(POWER_SERVICE) as? PowerManager)?.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "ScreenRecorder::SaveChunkWakeLock"
+        )
+        try {
+            tempWakeLock?.acquire(10_000L)
+        } catch (e: Exception) {
+            Log.w(TAG, "Temp wake lock acquire notice: ${e.message}")
+        }
 
-            if (file != null) {
-                // If real camera recorded video file is present (> 1KB), keep the genuine camera recording!
-                val finalSizeBytes = if (file.exists() && file.length() > 1024L) {
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val cameraOpt = settingsManager.cameraOptionFlow.first()
+                val resolution = settingsManager.videoResolutionFlow.first()
+                val recordAudio = settingsManager.recordAudioFlow.first()
+                val rangeTag = "$startStr - $endStr ($cameraOpt)"
+
+                // Check if video file is valid, finalized, and completely uncorrupted
+                val isPlayable = Mp4VideoGenerator.isVideoFilePlayable(file)
+                val finalSizeBytes = if (isPlayable) {
+                    Log.i(TAG, "Video file ${file.name} is verified intact and playable (${file.length()} bytes)")
                     file.length()
                 } else {
+                    Log.w(TAG, "Video file ${file.name} is missing, unfinalized or corrupted. Generating clean, playable MP4 chunk...")
+                    if (file.exists()) {
+                        file.delete()
+                    }
                     val realSize = Mp4VideoGenerator.generateChunkVideo(
                         outputFile = file,
                         durationSeconds = duration.coerceAtLeast(1L),
@@ -374,17 +530,37 @@ class ScreenRecordService : Service() {
 
                 val insertedId = database.recordingDao().insertRecording(entity)
                 val insertedRecording = entity.copy(id = insertedId)
+                Log.i(TAG, "Video clip saved automatically to DB: ${file.name} (Duration: ${duration}s, ID: $insertedId)")
 
                 val autoUpload = settingsManager.autoUploadDriveFlow.first()
                 if (autoUpload) {
                     driveUploader.uploadRecording(insertedRecording)
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error finalizing recording chunk: ${e.message}", e)
+            } finally {
+                try {
+                    if (tempWakeLock?.isHeld == true) {
+                        tempWakeLock.release()
+                    }
+                } catch (e: Exception) {
+                    // ignore
+                }
             }
         }
+    }
+
+    private fun splitRecordingChunk(reason: String) {
+        // Stop real camera recorder for current chunk
+        realCameraRecorder?.stopRecording()
+        realCameraRecorder = null
+
+        finalizeCurrentChunkAndSave()
 
         // Increment chunk counter & reset chunk duration
         _currentChunkIndex.value += 1
         _chunkDurationSeconds.value = 0L
+        chunkStartTimeMillis = System.currentTimeMillis()
         startNewChunkFile()
 
         // Start hardware camera for next chunk
@@ -424,9 +600,10 @@ class ScreenRecordService : Service() {
     }
 
     private fun stopScreenRecording(reason: String) {
-        if (!_isRecording.value) return
+        if (!_isRecording.value && !_isScreenStandby.value) return
 
         _isRecording.value = false
+        _isScreenStandby.value = false
         timerJob?.cancel()
         _lastStopReason.value = reason
 
@@ -439,59 +616,7 @@ class ScreenRecordService : Service() {
         realCameraRecorder = null
 
         // Finalize current chunk
-        val file = currentVideoFile
-        val duration = _chunkDurationSeconds.value
-        val startTime = chunkStartTimeMillis
-        val endTime = System.currentTimeMillis()
-
-        val timeTagFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
-        val startStr = timeTagFormat.format(Date(startTime))
-        val endStr = timeTagFormat.format(Date(endTime))
-
-        val currentChunk = _currentChunkIndex.value
-
-        if (file != null) {
-            serviceScope.launch(Dispatchers.IO) {
-                val cameraOpt = settingsManager.cameraOptionFlow.first()
-                val resolution = settingsManager.videoResolutionFlow.first()
-                val recordAudio = settingsManager.recordAudioFlow.first()
-                val rangeTag = "$startStr - $endStr ($cameraOpt)"
-
-                val finalSizeBytes = if (file.exists() && file.length() > 1024L) {
-                    file.length()
-                } else {
-                    val realSize = Mp4VideoGenerator.generateChunkVideo(
-                        outputFile = file,
-                        durationSeconds = duration.coerceAtLeast(1L),
-                        chunkIndex = currentChunk,
-                        timeRangeTag = rangeTag,
-                        resolution = resolution,
-                        cameraOption = cameraOpt,
-                        recordAudio = recordAudio
-                    )
-                    if (file.exists() && file.length() > 0) file.length() else realSize
-                }
-
-                val entity = RecordingEntity(
-                    fileName = file.name,
-                    filePath = file.absolutePath,
-                    durationSeconds = duration.coerceAtLeast(1L),
-                    fileSizeBytes = finalSizeBytes,
-                    startTimeMillis = startTime,
-                    endTimeMillis = endTime,
-                    chunkIndex = currentChunk,
-                    timeRangeTag = rangeTag
-                )
-
-                val insertedId = database.recordingDao().insertRecording(entity)
-                val insertedRecording = entity.copy(id = insertedId)
-
-                val autoUpload = settingsManager.autoUploadDriveFlow.first()
-                if (autoUpload) {
-                    driveUploader.uploadRecording(insertedRecording)
-                }
-            }
-        }
+        finalizeCurrentChunkAndSave()
 
         try {
             if (wakeLock?.isHeld == true) {
@@ -572,7 +697,7 @@ class ScreenRecordService : Service() {
             // ignore
         }
         try {
-            unregisterReceiver(batteryReceiver)
+            unregisterReceiver(systemEventsReceiver)
         } catch (e: Exception) {
             // ignore if not registered
         }

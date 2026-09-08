@@ -62,6 +62,9 @@ fun AppNavigation(viewModel: MainViewModel) {
     val autoStartOnBoot by viewModel.autoStartOnBoot.collectAsStateWithLifecycle()
     val autoStartOnCharging by viewModel.autoStartOnCharging.collectAsStateWithLifecycle()
     val isCharging by viewModel.isCharging.collectAsStateWithLifecycle()
+    val isScreenStandby by viewModel.isScreenStandby.collectAsStateWithLifecycle()
+    val smartScreenTrigger by viewModel.smartScreenTrigger.collectAsStateWithLifecycle()
+    val doubleButtonTriggerCount by viewModel.doubleButtonTriggerCount.collectAsStateWithLifecycle()
 
     val items = listOf(
         Screen.Dashboard,
@@ -118,6 +121,9 @@ fun AppNavigation(viewModel: MainViewModel) {
                     s23StealthMode = s23StealthMode,
                     isCharging = isCharging,
                     autoStartOnCharging = autoStartOnCharging,
+                    isScreenStandby = isScreenStandby,
+                    smartScreenTrigger = smartScreenTrigger,
+                    doubleButtonTriggerCount = doubleButtonTriggerCount,
                     onNavigateToRecordings = {
                         navController.navigate(Screen.Recordings.route)
                     }
@@ -150,7 +156,8 @@ fun AppNavigation(viewModel: MainViewModel) {
                     saveToGallery = saveToGallery,
                     s23StealthMode = s23StealthMode,
                     autoStartOnBoot = autoStartOnBoot,
-                    autoStartOnCharging = autoStartOnCharging
+                    autoStartOnCharging = autoStartOnCharging,
+                    smartScreenTrigger = smartScreenTrigger
                 )
             }
         }
